@@ -1,0 +1,15 @@
+enum ConditionState {
+  exceptional,
+  excellent,
+  good,
+  marginalImproving,
+  marginalDegrading,
+  poorGap,
+  poorSeeing,
+  smoke,
+  fog,
+  overcast,
+  multiDayOvercast,
+  astroDarkGood,
+  astroDarkPoor,
+}
