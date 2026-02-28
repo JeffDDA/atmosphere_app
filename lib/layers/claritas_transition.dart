@@ -57,7 +57,7 @@ class ClaritasTransitionController {
   // Eyepiece state
   EyepieceState _eyepieceState = EyepieceState.idle;
   Timer? _eyepieceHoldTimer;
-  double _lastPinchScale = 1.0;
+  double _lastSpreadPoints = 0.0;
   double _eyepieceLockProgress = 0.0;
 
   // Callbacks
@@ -117,39 +117,41 @@ class ClaritasTransitionController {
     _direction = direction;
     _isPinching = true;
     _isAnimating = false;
-    _lastPinchScale = 1.0;
+    _lastSpreadPoints = 0.0;
     _eyepieceState = EyepieceState.pinching;
     _animationController.stop();
   }
 
-  void updatePinchScale(double scale) {
+  void updatePinchSpread(double spreadPoints) {
     if (!_isPinching) return;
-
-    _lastPinchScale = scale;
 
     // Reset eyepiece hold timer on movement
     _cancelEyepieceHoldTimer();
     if (_eyepieceState == EyepieceState.holding ||
         _eyepieceState == EyepieceState.microPush) {
-      // Check for micro-push: additional outward movement while in hold
-      final delta = (scale - _lastPinchScale).abs();
-      if (_eyepieceState == EyepieceState.holding && delta > AtmosphereConstants.eyepieceScaleDeltaThreshold) {
+      // Check for micro-push: additional spread while in hold
+      final delta = (spreadPoints - _lastSpreadPoints).abs();
+      if (_eyepieceState == EyepieceState.holding &&
+          delta > AtmosphereConstants.eyepieceScaleDeltaThreshold * 100) {
         _eyepieceState = EyepieceState.microPush;
         onEyepieceStateChanged?.call(_eyepieceState);
+        _lastSpreadPoints = spreadPoints;
         return;
       }
     }
+    _lastSpreadPoints = spreadPoints;
 
-    double newProgress;
-    if (_direction == TransitionDirection.descend) {
-      newProgress = (scale - 1.0) /
-          (AtmosphereConstants.pinchMaxScale - 1.0);
-    } else {
-      newProgress = (1.0 - scale) /
-          (1.0 - AtmosphereConstants.pinchMinScale);
-    }
+    // Map absolute spread to progress:
+    //   0–40pt  → dead zone (handled by shell, but clamp here too)
+    //   40–220pt → 0%–50% progress
+    //   220–400pt → 50%–100% progress
+    final deadZone = AtmosphereConstants.pinchDeadZonePoints;
+    final commitPoints = AtmosphereConstants.pinchCommitPoints;
+    final effective = (spreadPoints - deadZone).clamp(0.0, double.infinity);
+    final commitRange = commitPoints - deadZone; // 180pt for 50%
+    final fullRange = commitRange * 2.0; // 360pt for 100%
 
-    _progress = newProgress.clamp(0.0, 1.0);
+    _progress = (effective / fullRange).clamp(0.0, 1.0);
     onProgressChanged?.call();
 
     // Start eyepiece hold detection
@@ -186,8 +188,8 @@ class ClaritasTransitionController {
     _isAnimating = true;
     final spring = SpringDescription.withDampingRatio(
       mass: 1.0,
-      stiffness: 300.0,
-      ratio: 0.7,
+      stiffness: 200.0,
+      ratio: 1.0, // critically damped — single settle, no bounce
     );
     final simulation = SpringSimulation(spring, _progress, 0.0, 0.0);
 

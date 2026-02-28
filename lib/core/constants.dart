@@ -7,9 +7,9 @@ class AtmosphereConstants {
   static const double balloonOvershoot = 0.04;
   static const Duration doubleTapWindow = Duration(milliseconds: 400);
 
-  // Pinch mapping
-  static const double pinchMaxScale = 2.0;
-  static const double pinchMinScale = 0.5;
+  // Pinch mapping — absolute point distances
+  static const double pinchDeadZonePoints = 40.0;  // points before tracking begins
+  static const double pinchCommitPoints = 220.0;   // points for 50% (commit threshold)
 
   // Eyepiece
   static const Duration eyepieceHoldDelay = Duration(milliseconds: 200);

@@ -16,7 +16,7 @@ class AtmosphereApp extends ConsumerWidget {
     final onboarding = ref.watch(onboardingProvider);
 
     return MaterialApp(
-      title: '@Mosphere',
+      title: 'Atmosphere',
       debugShowCheckedModeBanner: false,
       theme: displayMode == DisplayMode.dark
           ? AtmosphereTheme.dark

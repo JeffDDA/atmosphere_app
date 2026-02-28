@@ -42,7 +42,7 @@ class _LocationGrid extends ConsumerWidget {
         children: [
           const SizedBox(height: 24),
           Text(
-            '@Mosphere',
+            'Atmosphere',
             style: Theme.of(context).textTheme.headlineLarge,
           ),
           const SizedBox(height: 8),

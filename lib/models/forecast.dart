@@ -7,11 +7,21 @@ class HourlyForecast {
   final int transparency; // 1-5
   final double windMph;
   final double gustMph;
+  final double windDirectionDeg; // 0-360 compass
   final double dewSpreadC;
+  final double temperatureC;
+  final double dewPointC;
   final double smokePm25;
   final double kpIndex;
   final double moonIlluminationPercent;
+  final double moonAltitudeDeg; // negative = below horizon
+  final double moonAzimuthDeg;
   final ConditionState condition;
+
+  // Layer 3 Seeing components
+  final double gltHeatFlux; // W/m², sensible heat net flux (SHTFL)
+  final double bltCeilingM; // meters AGL, planetary boundary layer height (HPBL)
+  final double jsWindSpeedKt; // knots, 250mb wind speed
 
   const HourlyForecast({
     required this.time,
@@ -20,11 +30,19 @@ class HourlyForecast {
     required this.transparency,
     required this.windMph,
     this.gustMph = 0,
+    this.windDirectionDeg = 0,
     required this.dewSpreadC,
+    this.temperatureC = 10,
+    this.dewPointC = 0,
     this.smokePm25 = 0,
     this.kpIndex = 0,
     this.moonIlluminationPercent = 0,
+    this.moonAltitudeDeg = -10,
+    this.moonAzimuthDeg = 0,
     required this.condition,
+    this.gltHeatFlux = 0,
+    this.bltCeilingM = 500,
+    this.jsWindSpeedKt = 30,
   });
 }
 

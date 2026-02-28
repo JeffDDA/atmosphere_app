@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/atmosphere_colors.dart';
+import '../../../providers/scrub_provider.dart';
 
 enum ChartType { area, line }
 
-/// A simple chart widget that renders mock data as area or line chart.
-class ChartCard extends StatelessWidget {
+/// Chart widget with scrub position indicator, area/line rendering.
+class ChartCard extends ConsumerWidget {
   final List<double> values;
   final double maxValue;
   final ChartType type;
   final Color? color;
   final List<double>? gustValues;
+  final List<double>? secondaryValues;
+  final Color? secondaryColor;
+  final List<Color>? segmentColors;
+  final List<int> nightBoundaryIndices;
 
   const ChartCard({
     super.key,
@@ -19,10 +25,16 @@ class ChartCard extends StatelessWidget {
     this.type = ChartType.area,
     this.color,
     this.gustValues,
+    this.secondaryValues,
+    this.secondaryColor,
+    this.segmentColors,
+    this.nightBoundaryIndices = const [],
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scrubState = ref.watch(scrubProvider);
+
     return CustomPaint(
       painter: _ChartPainter(
         values: values,
@@ -30,6 +42,12 @@ class ChartCard extends StatelessWidget {
         type: type,
         color: color ?? AtmosphereColors.mediumBlue,
         gustValues: gustValues,
+        secondaryValues: secondaryValues,
+        secondaryColor: secondaryColor,
+        segmentColors: segmentColors,
+        scrubPosition: scrubState.position,
+        isScrubbing: scrubState.isScrubbing,
+        nightBoundaryIndices: nightBoundaryIndices,
       ),
       size: Size.infinite,
     );
@@ -42,6 +60,12 @@ class _ChartPainter extends CustomPainter {
   final ChartType type;
   final Color color;
   final List<double>? gustValues;
+  final List<double>? secondaryValues;
+  final Color? secondaryColor;
+  final List<Color>? segmentColors;
+  final double scrubPosition;
+  final bool isScrubbing;
+  final List<int> nightBoundaryIndices;
 
   _ChartPainter({
     required this.values,
@@ -49,14 +73,50 @@ class _ChartPainter extends CustomPainter {
     required this.type,
     required this.color,
     this.gustValues,
+    this.secondaryValues,
+    this.secondaryColor,
+    this.segmentColors,
+    required this.scrubPosition,
+    required this.isScrubbing,
+    this.nightBoundaryIndices = const [],
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty) return;
 
+    // Draw the primary data line
+    _drawDataLine(canvas, size, values, color, type, filled: type == ChartType.area);
+
+    // Draw secondary data line if present
+    if (secondaryValues != null && secondaryValues!.isNotEmpty) {
+      _drawDataLine(
+        canvas, size, secondaryValues!,
+        secondaryColor ?? color.withValues(alpha: 0.5),
+        ChartType.line,
+        filled: false,
+        dashed: true,
+      );
+    }
+
+    // Night boundary separators
+    _drawNightBoundaries(canvas, size);
+
+    // Gust markers
+    if (gustValues != null) {
+      _drawGustMarkers(canvas, size);
+    }
+
+    // Scrub position indicator
+    _drawScrubIndicator(canvas, size);
+  }
+
+  void _drawDataLine(
+    Canvas canvas, Size size, List<double> data, Color lineColor,
+    ChartType chartType, {bool filled = false, bool dashed = false}
+  ) {
     final paint = Paint()
-      ..color = color
+      ..color = lineColor
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round;
@@ -64,76 +124,148 @@ class _ChartPainter extends CustomPainter {
     final path = Path();
     final points = <Offset>[];
 
-    for (var i = 0; i < values.length; i++) {
-      final x = (i / (values.length - 1).clamp(1, values.length)) * size.width;
-      final y = size.height - (values[i] / maxValue) * size.height;
+    for (var i = 0; i < data.length; i++) {
+      final x = _xForIndex(i, data.length, size.width);
+      final y = size.height - (data[i] / maxValue).clamp(0.0, 1.0) * size.height;
       points.add(Offset(x, y));
     }
 
-    // Smooth curve through points
-    if (points.isNotEmpty) {
-      path.moveTo(points[0].dx, points[0].dy);
-      for (var i = 1; i < points.length; i++) {
-        final prev = points[i - 1];
-        final curr = points[i];
-        final cpx = (prev.dx + curr.dx) / 2;
-        path.cubicTo(cpx, prev.dy, cpx, curr.dy, curr.dx, curr.dy);
-      }
+    if (points.isEmpty) return;
+
+    path.moveTo(points[0].dx, points[0].dy);
+    for (var i = 1; i < points.length; i++) {
+      final prev = points[i - 1];
+      final curr = points[i];
+      final cpx = (prev.dx + curr.dx) / 2;
+      path.cubicTo(cpx, prev.dy, cpx, curr.dy, curr.dx, curr.dy);
     }
 
     canvas.drawPath(path, paint);
 
     // Fill for area chart
-    if (type == ChartType.area && points.isNotEmpty) {
+    if (filled && points.isNotEmpty) {
       final fillPath = Path.from(path);
       fillPath.lineTo(points.last.dx, size.height);
       fillPath.lineTo(points.first.dx, size.height);
       fillPath.close();
 
-      final fillPaint = Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            color.withValues(alpha: 0.3),
-            color.withValues(alpha: 0.05),
-          ],
-        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
-        ..style = PaintingStyle.fill;
+      // Use segment colors if available for CDS color vocabulary
+      Paint fillPaint;
+      if (segmentColors != null && segmentColors!.length == data.length) {
+        fillPaint = Paint()
+          ..shader = LinearGradient(
+            colors: segmentColors!.map((c) => c.withValues(alpha: 0.3)).toList(),
+            stops: List.generate(
+              segmentColors!.length,
+              (i) => i / (segmentColors!.length - 1).clamp(1, segmentColors!.length),
+            ),
+          ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+          ..style = PaintingStyle.fill;
+      } else {
+        fillPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              lineColor.withValues(alpha: 0.3),
+              lineColor.withValues(alpha: 0.05),
+            ],
+          ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+          ..style = PaintingStyle.fill;
+      }
 
       canvas.drawPath(fillPath, fillPaint);
     }
+  }
 
-    // Gust markers
-    if (gustValues != null) {
-      final gustPaint = Paint()
-        ..color = color.withValues(alpha: 0.4)
-        ..strokeWidth = 1.5
-        ..style = PaintingStyle.stroke;
+  void _drawNightBoundaries(Canvas canvas, Size size) {
+    if (nightBoundaryIndices.isEmpty || values.length <= 1) return;
 
-      for (var i = 0; i < gustValues!.length; i++) {
-        if (gustValues![i] <= 0) continue;
-        final x =
-            (i / (gustValues!.length - 1).clamp(1, gustValues!.length)) *
-                size.width;
-        final baseY =
-            size.height - (values[i] / maxValue) * size.height;
-        final gustY =
-            size.height - (gustValues![i] / maxValue) * size.height;
-        canvas.drawLine(Offset(x, baseY), Offset(x, gustY), gustPaint);
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 1.0;
 
-        // Small circle at gust peak
-        canvas.drawCircle(
-          Offset(x, gustY),
-          3,
-          Paint()
-            ..color = color.withValues(alpha: 0.5)
-            ..style = PaintingStyle.fill,
-        );
-      }
+    for (final idx in nightBoundaryIndices) {
+      final x = _xForIndex(idx, values.length, size.width);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
   }
 
+  void _drawGustMarkers(Canvas canvas, Size size) {
+    final gustPaint = Paint()
+      ..color = color.withValues(alpha: 0.4)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    for (var i = 0; i < gustValues!.length; i++) {
+      if (gustValues![i] <= 0) continue;
+      final x = _xForIndex(i, gustValues!.length, size.width);
+      final baseY = size.height - (values[i] / maxValue).clamp(0.0, 1.0) * size.height;
+      final gustY = size.height - (gustValues![i] / maxValue).clamp(0.0, 1.0) * size.height;
+      canvas.drawLine(Offset(x, baseY), Offset(x, gustY), gustPaint);
+
+      canvas.drawCircle(
+        Offset(x, gustY),
+        3,
+        Paint()
+          ..color = color.withValues(alpha: 0.5)
+          ..style = PaintingStyle.fill,
+      );
+    }
+  }
+
+  void _drawScrubIndicator(Canvas canvas, Size size) {
+    final x = scrubPosition * size.width;
+    final alpha = isScrubbing ? 0.8 : 0.3;
+
+    // Vertical indicator line
+    canvas.drawLine(
+      Offset(x, 0),
+      Offset(x, size.height),
+      Paint()
+        ..color = Colors.white.withValues(alpha: alpha)
+        ..strokeWidth = isScrubbing ? 1.5 : 1.0,
+    );
+
+    // Value dot on the primary line at scrub position
+    if (values.isNotEmpty) {
+      final fracIdx = scrubPosition * (values.length - 1);
+      final idx = fracIdx.floor().clamp(0, values.length - 2);
+      final t = fracIdx - idx;
+      final interpolatedValue = values[idx] * (1 - t) + values[(idx + 1).clamp(0, values.length - 1)] * t;
+      final dotY = size.height - (interpolatedValue / maxValue).clamp(0.0, 1.0) * size.height;
+
+      // Glow
+      if (isScrubbing) {
+        canvas.drawCircle(
+          Offset(x, dotY),
+          8,
+          Paint()
+            ..color = color.withValues(alpha: 0.3)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+        );
+      }
+
+      // Dot
+      canvas.drawCircle(
+        Offset(x, dotY),
+        isScrubbing ? 5 : 3,
+        Paint()
+          ..color = Colors.white.withValues(alpha: isScrubbing ? 0.95 : 0.5)
+          ..style = PaintingStyle.fill,
+      );
+    }
+  }
+
+  double _xForIndex(int i, int count, double width) {
+    if (count <= 1) return width / 2;
+    return (i / (count - 1)) * width;
+  }
+
   @override
-  bool shouldRepaint(_ChartPainter oldDelegate) => true;
+  bool shouldRepaint(_ChartPainter old) {
+    return old.scrubPosition != scrubPosition ||
+        old.isScrubbing != isScrubbing ||
+        old.values != values;
+  }
 }

@@ -9,6 +9,7 @@ import '../widgets/depth_indicator.dart';
 import 'claritas_transition.dart';
 import 'layer1/layer1_card.dart';
 import 'layer2/layer2_view.dart';
+import 'layer3/layer3_view.dart';
 
 class ClaritasShell extends ConsumerStatefulWidget {
   const ClaritasShell({super.key});
@@ -21,6 +22,16 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
     with SingleTickerProviderStateMixin {
   late final ClaritasTransitionController _controller;
   DateTime? _lastTapTime;
+
+  // Raw pointer tracking for absolute spread calculation
+  final Map<int, Offset> _activePointers = {};
+  double _initialSpan = 0.0;
+
+  double get _currentSpan {
+    if (_activePointers.length < 2) return 0.0;
+    final pts = _activePointers.values.toList();
+    return (pts[0] - pts[1]).distance;
+  }
 
   @override
   void initState() {
@@ -66,6 +77,29 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
     super.dispose();
   }
 
+  // --- Pointer tracking ---
+
+  void _onPointerDown(PointerDownEvent event) {
+    _activePointers[event.pointer] = event.localPosition;
+    if (_activePointers.length == 2) {
+      _initialSpan = _currentSpan;
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    _activePointers[event.pointer] = event.localPosition;
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _activePointers.remove(event.pointer);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _activePointers.remove(event.pointer);
+  }
+
+  // --- Tap handling ---
+
   void _handleTap() {
     final now = DateTime.now();
 
@@ -108,23 +142,36 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
     _controller.startTapTransition(TransitionDirection.ascend);
   }
 
+  // --- Pinch handling ---
+
   void _handleScaleStart(ScaleStartDetails details) {
     if (_controller.isAnimating) return;
   }
 
   void _handleScaleUpdate(ScaleUpdateDetails details) {
-    final scale = details.scale;
-    if (scale == 1.0) return; // No pinch happening
+    if (details.pointerCount < 2) return;
+    if (_controller.isAnimating) return;
 
-    final navState = ref.read(navigationProvider);
+    // Ensure we have a valid initial span
+    if (_initialSpan <= 0 && _activePointers.length >= 2) {
+      _initialSpan = _currentSpan;
+    }
+    if (_initialSpan <= 0) return;
+
+    final spread = _currentSpan - _initialSpan;
+    final absSpread = spread.abs();
 
     if (!_controller.isPinching) {
-      // Determine direction from initial gesture
-      final direction = scale > 1.0
+      // Dead zone — first 40 points filtered
+      if (absSpread < AtmosphereConstants.pinchDeadZonePoints) return;
+
+      // Determine direction from spread sign
+      final direction = spread > 0
           ? TransitionDirection.descend
           : TransitionDirection.ascend;
 
       // Check if we can go in this direction
+      final navState = ref.read(navigationProvider);
       if (direction == TransitionDirection.ascend &&
           navState.currentLayer == LayerId.home) {
         return;
@@ -135,12 +182,13 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
       _controller.beginPinch(direction);
     }
 
-    _controller.updatePinchScale(scale);
+    _controller.updatePinchSpread(absSpread);
   }
 
   void _handleScaleEnd(ScaleEndDetails details) {
     if (!_controller.isPinching) return;
     _controller.onPinchEnd(details.velocity.pixelsPerSecond.distance);
+    _initialSpan = 0.0;
   }
 
   Widget _buildLayerContent(LayerId layer) {
@@ -152,16 +200,7 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
       case LayerId.layer2:
         return const Layer2View();
       case LayerId.layer3:
-        // Stub for future
-        return Container(
-          color: const Color(0xFF2E5090),
-          child: const Center(
-            child: Text(
-              'Layer 3',
-              style: TextStyle(color: Colors.white, fontSize: 24),
-            ),
-          ),
-        );
+        return const Layer3View();
       case LayerId.layer4:
         // Stub for future
         return Container(
@@ -184,48 +223,54 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
     final isTransitioning = navState.isTransitioning;
 
     return Scaffold(
-      body: GestureDetector(
-        onTap: _handleTap,
-        onScaleStart: _handleScaleStart,
-        onScaleUpdate: _handleScaleUpdate,
-        onScaleEnd: _handleScaleEnd,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Incoming layer (underneath)
-            if (isTransitioning && targetLayer != null)
-              Opacity(
-                opacity: _controller.incomingOpacity,
-                child: Transform.scale(
-                  scale: _controller.incomingScale,
-                  child: _buildLayerContent(targetLayer),
+      body: Listener(
+        onPointerDown: _onPointerDown,
+        onPointerMove: _onPointerMove,
+        onPointerUp: _onPointerUp,
+        onPointerCancel: _onPointerCancel,
+        child: GestureDetector(
+          onTap: _handleTap,
+          onScaleStart: _handleScaleStart,
+          onScaleUpdate: _handleScaleUpdate,
+          onScaleEnd: _handleScaleEnd,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Incoming layer (underneath)
+              if (isTransitioning && targetLayer != null)
+                Opacity(
+                  opacity: _controller.incomingOpacity,
+                  child: Transform.scale(
+                    scale: _controller.incomingScale,
+                    child: _buildLayerContent(targetLayer),
+                  ),
                 ),
-              ),
 
-            // Current layer (on top)
-            if (!isTransitioning || _controller.outgoingOpacity > 0)
-              Opacity(
-                opacity: isTransitioning
-                    ? _controller.outgoingOpacity
-                    : 1.0,
-                child: Transform.scale(
-                  scale: isTransitioning
-                      ? _controller.outgoingScale
+              // Current layer (on top)
+              if (!isTransitioning || _controller.outgoingOpacity > 0)
+                Opacity(
+                  opacity: isTransitioning
+                      ? _controller.outgoingOpacity
                       : 1.0,
-                  child: _buildLayerContent(currentLayer),
+                  child: Transform.scale(
+                    scale: isTransitioning
+                        ? _controller.outgoingScale
+                        : 1.0,
+                    child: _buildLayerContent(currentLayer),
+                  ),
+                ),
+
+              // Overlays
+              const SafeArea(
+                child: Stack(
+                  children: [
+                    DepthIndicator(),
+                    ConditionFlags(),
+                  ],
                 ),
               ),
-
-            // Overlays
-            const SafeArea(
-              child: Stack(
-                children: [
-                  DepthIndicator(),
-                  ConditionFlags(),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
