@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants.dart';
 import '../../core/theme/atmosphere_colors.dart';
 import '../../models/forecast.dart';
+import '../../providers/canvas_provider.dart';
 import '../../providers/forecast_provider.dart';
 import '../../providers/scrub_provider.dart';
 
@@ -40,10 +42,7 @@ class GradientAnchor extends ConsumerWidget {
             allHoursCount: allHours.length,
             onNightTap: (nightIdx) {
               final b = nightBoundaries[nightIdx];
-              final globalPos = allHours.length <= 1
-                  ? 0.0
-                  : b.startIndex / (allHours.length - 1);
-              ref.read(scrubProvider.notifier).updatePosition(globalPos);
+              ref.read(canvasProvider.notifier).jumpToHour(b.startIndex);
             },
           ),
           const SizedBox(height: 4),
@@ -53,14 +52,14 @@ class GradientAnchor extends ConsumerWidget {
           // Gradient bar with cursor
           GestureDetector(
             onHorizontalDragStart: (details) {
-              ref.read(scrubProvider.notifier).startScrub();
-              _updateScrubFromDrag(context, details.localPosition.dx, ref);
+              ref.read(canvasProvider.notifier).startPan();
+              _updateCanvasFromDrag(context, details.localPosition.dx, ref);
             },
             onHorizontalDragUpdate: (details) {
-              _updateScrubFromDrag(context, details.localPosition.dx, ref);
+              _updateCanvasFromDrag(context, details.localPosition.dx, ref);
             },
-            onHorizontalDragEnd: (_) {
-              ref.read(scrubProvider.notifier).endScrub();
+            onHorizontalDragEnd: (details) {
+              ref.read(canvasProvider.notifier).endPan(0);
             },
             child: SizedBox(
               height: 48,
@@ -100,18 +99,22 @@ class GradientAnchor extends ConsumerWidget {
     return ((globalPos - _nightStartFrac) / range).clamp(0.0, 1.0);
   }
 
-  /// Convert bar-local drag to global scrub position.
-  void _updateScrubFromDrag(
+  /// Convert bar-local drag position to canvas offset.
+  void _updateCanvasFromDrag(
       BuildContext context, double localX, WidgetRef ref) {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     final barWidth = box.size.width - 40; // account for 20px padding each side
     final barLocalPos = ((localX - 20) / barWidth).clamp(0.0, 1.0);
-    final globalPos =
-        _nightStartFrac + barLocalPos * (_nightEndFrac - _nightStartFrac);
-    ref
-        .read(scrubProvider.notifier)
-        .updatePosition(globalPos.clamp(0.0, 1.0));
+
+    // Map bar position to hour index within active night
+    final boundary = nightBoundaries[activeNightIndex];
+    final hourIndex = boundary.startIndex +
+        (barLocalPos * (boundary.hourCount - 1)).round();
+    final pph = AtmosphereConstants.canvasPixelsPerHour;
+    final maxOffset = (allHours.length - 1) * pph;
+    final targetOffset = (hourIndex * pph).clamp(0.0, maxOffset);
+    ref.read(canvasProvider.notifier).updateOffset(targetOffset);
   }
 }
 

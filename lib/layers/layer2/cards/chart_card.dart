@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants.dart';
 import '../../../core/theme/atmosphere_colors.dart';
-import '../../../providers/scrub_provider.dart';
+import '../../../providers/canvas_provider.dart';
 
 enum ChartType { area, line }
 
-/// Chart widget with scrub position indicator, area/line rendering.
+/// Chart widget with canvas-panning rendering at fixed pixel-per-hour scale.
 class ChartCard extends ConsumerWidget {
   final List<double> values;
   final double maxValue;
@@ -33,7 +34,7 @@ class ChartCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scrubState = ref.watch(scrubProvider);
+    final canvasState = ref.watch(canvasProvider);
 
     return CustomPaint(
       painter: _ChartPainter(
@@ -45,8 +46,9 @@ class ChartCard extends ConsumerWidget {
         secondaryValues: secondaryValues,
         secondaryColor: secondaryColor,
         segmentColors: segmentColors,
-        scrubPosition: scrubState.position,
-        isScrubbing: scrubState.isScrubbing,
+        canvasOffsetPx: canvasState.offsetPx,
+        isPanning: canvasState.isPanning,
+        pixelsPerHour: AtmosphereConstants.canvasPixelsPerHour,
         nightBoundaryIndices: nightBoundaryIndices,
       ),
       size: Size.infinite,
@@ -63,8 +65,9 @@ class _ChartPainter extends CustomPainter {
   final List<double>? secondaryValues;
   final Color? secondaryColor;
   final List<Color>? segmentColors;
-  final double scrubPosition;
-  final bool isScrubbing;
+  final double canvasOffsetPx;
+  final bool isPanning;
+  final double pixelsPerHour;
   final List<int> nightBoundaryIndices;
 
   _ChartPainter({
@@ -76,22 +79,34 @@ class _ChartPainter extends CustomPainter {
     this.secondaryValues,
     this.secondaryColor,
     this.segmentColors,
-    required this.scrubPosition,
-    required this.isScrubbing,
+    required this.canvasOffsetPx,
+    required this.isPanning,
+    required this.pixelsPerHour,
     this.nightBoundaryIndices = const [],
   });
+
+  double get _anchorFraction => AtmosphereConstants.canvasReadingAnchorFraction;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty) return;
 
-    // Draw the primary data line
-    _drawDataLine(canvas, size, values, color, type, filled: type == ChartType.area);
+    final anchorScreenX = _anchorFraction * size.width;
+    final tx = anchorScreenX - canvasOffsetPx;
 
-    // Draw secondary data line if present
+    // --- Translated data layer ---
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.translate(tx, 0);
+
+    _drawDataLine(canvas, size, values, color, type,
+        filled: type == ChartType.area);
+
     if (secondaryValues != null && secondaryValues!.isNotEmpty) {
       _drawDataLine(
-        canvas, size, secondaryValues!,
+        canvas,
+        size,
+        secondaryValues!,
         secondaryColor ?? color.withValues(alpha: 0.5),
         ChartType.line,
         filled: false,
@@ -99,22 +114,27 @@ class _ChartPainter extends CustomPainter {
       );
     }
 
-    // Night boundary separators
     _drawNightBoundaries(canvas, size);
 
-    // Gust markers
     if (gustValues != null) {
       _drawGustMarkers(canvas, size);
     }
 
-    // Scrub position indicator
-    _drawScrubIndicator(canvas, size);
+    canvas.restore();
+
+    // --- Fixed viewport layer (cursor indicator) ---
+    _drawCursorIndicator(canvas, size, anchorScreenX);
   }
 
   void _drawDataLine(
-    Canvas canvas, Size size, List<double> data, Color lineColor,
-    ChartType chartType, {bool filled = false, bool dashed = false}
-  ) {
+    Canvas canvas,
+    Size size,
+    List<double> data,
+    Color lineColor,
+    ChartType chartType, {
+    bool filled = false,
+    bool dashed = false,
+  }) {
     final paint = Paint()
       ..color = lineColor
       ..strokeWidth = 2.0
@@ -125,8 +145,9 @@ class _ChartPainter extends CustomPainter {
     final points = <Offset>[];
 
     for (var i = 0; i < data.length; i++) {
-      final x = _xForIndex(i, data.length, size.width);
-      final y = size.height - (data[i] / maxValue).clamp(0.0, 1.0) * size.height;
+      final x = i * pixelsPerHour;
+      final y =
+          size.height - (data[i] / maxValue).clamp(0.0, 1.0) * size.height;
       points.add(Offset(x, y));
     }
 
@@ -149,17 +170,22 @@ class _ChartPainter extends CustomPainter {
       fillPath.lineTo(points.first.dx, size.height);
       fillPath.close();
 
-      // Use segment colors if available for CDS color vocabulary
+      final dataWidth = (data.length - 1) * pixelsPerHour;
+
       Paint fillPaint;
       if (segmentColors != null && segmentColors!.length == data.length) {
         fillPaint = Paint()
           ..shader = LinearGradient(
-            colors: segmentColors!.map((c) => c.withValues(alpha: 0.3)).toList(),
+            colors:
+                segmentColors!.map((c) => c.withValues(alpha: 0.3)).toList(),
             stops: List.generate(
               segmentColors!.length,
-              (i) => i / (segmentColors!.length - 1).clamp(1, segmentColors!.length),
+              (i) =>
+                  i /
+                  (segmentColors!.length - 1)
+                      .clamp(1, segmentColors!.length),
             ),
-          ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+          ).createShader(Rect.fromLTWH(0, 0, dataWidth, size.height))
           ..style = PaintingStyle.fill;
       } else {
         fillPaint = Paint()
@@ -170,7 +196,7 @@ class _ChartPainter extends CustomPainter {
               lineColor.withValues(alpha: 0.3),
               lineColor.withValues(alpha: 0.05),
             ],
-          ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
+          ).createShader(Rect.fromLTWH(0, 0, dataWidth, size.height))
           ..style = PaintingStyle.fill;
       }
 
@@ -186,7 +212,7 @@ class _ChartPainter extends CustomPainter {
       ..strokeWidth = 1.0;
 
     for (final idx in nightBoundaryIndices) {
-      final x = _xForIndex(idx, values.length, size.width);
+      final x = idx * pixelsPerHour;
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
   }
@@ -199,9 +225,11 @@ class _ChartPainter extends CustomPainter {
 
     for (var i = 0; i < gustValues!.length; i++) {
       if (gustValues![i] <= 0) continue;
-      final x = _xForIndex(i, gustValues!.length, size.width);
-      final baseY = size.height - (values[i] / maxValue).clamp(0.0, 1.0) * size.height;
-      final gustY = size.height - (gustValues![i] / maxValue).clamp(0.0, 1.0) * size.height;
+      final x = i * pixelsPerHour;
+      final baseY =
+          size.height - (values[i] / maxValue).clamp(0.0, 1.0) * size.height;
+      final gustY = size.height -
+          (gustValues![i] / maxValue).clamp(0.0, 1.0) * size.height;
       canvas.drawLine(Offset(x, baseY), Offset(x, gustY), gustPaint);
 
       canvas.drawCircle(
@@ -214,31 +242,32 @@ class _ChartPainter extends CustomPainter {
     }
   }
 
-  void _drawScrubIndicator(Canvas canvas, Size size) {
-    final x = scrubPosition * size.width;
-    final alpha = isScrubbing ? 0.8 : 0.3;
+  void _drawCursorIndicator(Canvas canvas, Size size, double anchorScreenX) {
+    final alpha = isPanning ? 0.8 : 0.3;
 
-    // Vertical indicator line
+    // Vertical indicator line at fixed screen position
     canvas.drawLine(
-      Offset(x, 0),
-      Offset(x, size.height),
+      Offset(anchorScreenX, 0),
+      Offset(anchorScreenX, size.height),
       Paint()
         ..color = Colors.white.withValues(alpha: alpha)
-        ..strokeWidth = isScrubbing ? 1.5 : 1.0,
+        ..strokeWidth = isPanning ? 1.5 : 1.0,
     );
 
-    // Value dot on the primary line at scrub position
+    // Value dot on the primary line at cursor position
     if (values.isNotEmpty) {
-      final fracIdx = scrubPosition * (values.length - 1);
+      final fracIdx = canvasOffsetPx / pixelsPerHour;
       final idx = fracIdx.floor().clamp(0, values.length - 2);
       final t = fracIdx - idx;
-      final interpolatedValue = values[idx] * (1 - t) + values[(idx + 1).clamp(0, values.length - 1)] * t;
-      final dotY = size.height - (interpolatedValue / maxValue).clamp(0.0, 1.0) * size.height;
+      final interpolatedValue = values[idx] * (1 - t) +
+          values[(idx + 1).clamp(0, values.length - 1)] * t;
+      final dotY = size.height -
+          (interpolatedValue / maxValue).clamp(0.0, 1.0) * size.height;
 
       // Glow
-      if (isScrubbing) {
+      if (isPanning) {
         canvas.drawCircle(
-          Offset(x, dotY),
+          Offset(anchorScreenX, dotY),
           8,
           Paint()
             ..color = color.withValues(alpha: 0.3)
@@ -248,24 +277,20 @@ class _ChartPainter extends CustomPainter {
 
       // Dot
       canvas.drawCircle(
-        Offset(x, dotY),
-        isScrubbing ? 5 : 3,
+        Offset(anchorScreenX, dotY),
+        isPanning ? 5 : 3,
         Paint()
-          ..color = Colors.white.withValues(alpha: isScrubbing ? 0.95 : 0.5)
+          ..color =
+              Colors.white.withValues(alpha: isPanning ? 0.95 : 0.5)
           ..style = PaintingStyle.fill,
       );
     }
   }
 
-  double _xForIndex(int i, int count, double width) {
-    if (count <= 1) return width / 2;
-    return (i / (count - 1)) * width;
-  }
-
   @override
   bool shouldRepaint(_ChartPainter old) {
-    return old.scrubPosition != scrubPosition ||
-        old.isScrubbing != isScrubbing ||
+    return old.canvasOffsetPx != canvasOffsetPx ||
+        old.isPanning != isPanning ||
         old.values != values;
   }
 }

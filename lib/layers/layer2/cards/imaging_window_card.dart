@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants.dart';
 import '../../../core/theme/atmosphere_colors.dart';
 import '../../../models/forecast.dart';
-import '../../../providers/scrub_provider.dart';
+import '../../../providers/canvas_provider.dart';
 import 'base_card.dart';
 
 class ImagingWindowCard extends ConsumerWidget {
@@ -99,7 +100,7 @@ class ImagingWindowCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scrubState = ref.watch(scrubProvider);
+    final canvasState = ref.watch(canvasProvider);
 
     return BaseCard(
       parameterName: 'Imaging Window',
@@ -108,8 +109,9 @@ class ImagingWindowCard extends ConsumerWidget {
         painter: _ImagingWindowPainter(
           hours: hours,
           bestWindow: _bestWindow(),
-          scrubPosition: scrubState.position,
-          isScrubbing: scrubState.isScrubbing,
+          canvasOffsetPx: canvasState.offsetPx,
+          isPanning: canvasState.isPanning,
+          pixelsPerHour: AtmosphereConstants.canvasPixelsPerHour,
           nightBoundaryIndices: nightBoundaryIndices,
         ),
         size: Size.infinite,
@@ -122,24 +124,34 @@ class ImagingWindowCard extends ConsumerWidget {
 class _ImagingWindowPainter extends CustomPainter {
   final List<HourlyForecast> hours;
   final (int, int)? bestWindow;
-  final double scrubPosition;
-  final bool isScrubbing;
+  final double canvasOffsetPx;
+  final bool isPanning;
+  final double pixelsPerHour;
   final List<int> nightBoundaryIndices;
 
   _ImagingWindowPainter({
     required this.hours,
     this.bestWindow,
-    required this.scrubPosition,
-    required this.isScrubbing,
+    required this.canvasOffsetPx,
+    required this.isPanning,
+    required this.pixelsPerHour,
     this.nightBoundaryIndices = const [],
   });
+
+  double get _anchorFraction => AtmosphereConstants.canvasReadingAnchorFraction;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (hours.isEmpty) return;
 
-    final segmentWidth = size.width / hours.length;
+    final anchorScreenX = _anchorFraction * size.width;
+    final tx = anchorScreenX - canvasOffsetPx;
     final isBest = bestWindow != null;
+
+    // --- Translated data layer ---
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.translate(tx, 0);
 
     for (var i = 0; i < hours.length; i++) {
       final h = hours[i];
@@ -148,20 +160,22 @@ class _ImagingWindowPainter extends CustomPainter {
       final seeingScore = h.seeing / 5.0;
       final transparencyScore = h.transparency / 5.0;
       final windPenalty = (h.windMph > 15) ? 0.8 : 1.0;
-      final quality = (cloudScore * 0.35 + seeingScore * 0.25 +
-              transparencyScore * 0.25 + windPenalty * 0.15)
+      final quality = (cloudScore * 0.35 +
+              seeingScore * 0.25 +
+              transparencyScore * 0.25 +
+              windPenalty * 0.15)
           .clamp(0.0, 1.0);
 
       // CDS color mapping for quality bands
       Color color;
       if (quality >= 0.8) {
-        color = AtmosphereColors.deepBlue; // Best window
+        color = AtmosphereColors.deepBlue;
       } else if (quality >= 0.6) {
-        color = AtmosphereColors.mediumBlue; // Acceptable
+        color = AtmosphereColors.mediumBlue;
       } else if (quality >= 0.4) {
-        color = AtmosphereColors.blueGrey; // Marginal
+        color = AtmosphereColors.blueGrey;
       } else {
-        color = AtmosphereColors.darkGrey; // Closed
+        color = AtmosphereColors.darkGrey;
       }
 
       // Highlight best window segments
@@ -171,9 +185,9 @@ class _ImagingWindowPainter extends CustomPainter {
       }
 
       final rect = Rect.fromLTWH(
-        i * segmentWidth + 1,
+        i * pixelsPerHour + 1,
         size.height * (1.0 - quality),
-        segmentWidth - 2,
+        pixelsPerHour - 2,
         size.height * quality,
       );
 
@@ -184,7 +198,8 @@ class _ImagingWindowPainter extends CustomPainter {
 
       // Best window boundary labels
       if (isBest && (i == bestWindow!.$1 || i == bestWindow!.$2)) {
-        final hour = hours[i].time.hour % 12 == 0 ? 12 : hours[i].time.hour % 12;
+        final hour =
+            hours[i].time.hour % 12 == 0 ? 12 : hours[i].time.hour % 12;
         final ampm = hours[i].time.hour < 12 ? 'a' : 'p';
         final textPainter = TextPainter(
           text: TextSpan(
@@ -199,7 +214,7 @@ class _ImagingWindowPainter extends CustomPainter {
         textPainter.paint(
           canvas,
           Offset(
-            i * segmentWidth + segmentWidth / 2 - textPainter.width / 2,
+            i * pixelsPerHour + pixelsPerHour / 2 - textPainter.width / 2,
             size.height * (1.0 - quality) - 14,
           ),
         );
@@ -212,7 +227,7 @@ class _ImagingWindowPainter extends CustomPainter {
         ..color = Colors.white.withValues(alpha: 0.12)
         ..strokeWidth = 1.0;
       for (final idx in nightBoundaryIndices) {
-        final bx = idx * segmentWidth + segmentWidth / 2;
+        final bx = idx * pixelsPerHour + pixelsPerHour / 2;
         canvas.drawLine(
           Offset(bx, 0),
           Offset(bx, size.height),
@@ -221,20 +236,20 @@ class _ImagingWindowPainter extends CustomPainter {
       }
     }
 
-    // Scrub indicator
-    final x = scrubPosition * size.width;
+    canvas.restore();
+
+    // --- Fixed viewport layer (cursor indicator) ---
     canvas.drawLine(
-      Offset(x, 0),
-      Offset(x, size.height),
+      Offset(anchorScreenX, 0),
+      Offset(anchorScreenX, size.height),
       Paint()
-        ..color = Colors.white.withValues(alpha: isScrubbing ? 0.8 : 0.3)
-        ..strokeWidth = isScrubbing ? 1.5 : 1.0,
+        ..color = Colors.white.withValues(alpha: isPanning ? 0.8 : 0.3)
+        ..strokeWidth = isPanning ? 1.5 : 1.0,
     );
   }
 
   @override
   bool shouldRepaint(_ImagingWindowPainter old) {
-    return old.scrubPosition != scrubPosition ||
-        old.isScrubbing != isScrubbing;
+    return old.canvasOffsetPx != canvasOffsetPx || old.isPanning != isPanning;
   }
 }

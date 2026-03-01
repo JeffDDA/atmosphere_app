@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants.dart';
 import '../../models/forecast.dart';
+import '../../providers/canvas_provider.dart';
 import '../../providers/forecast_provider.dart';
 import '../../providers/layer3_entry_provider.dart';
 import '../../providers/location_provider.dart';
@@ -34,6 +36,14 @@ class Layer2View extends ConsumerWidget {
         ),
       );
     }
+
+    // Compute and set maxOffset for the canvas
+    final pph = AtmosphereConstants.canvasPixelsPerHour;
+    final maxOffset = ((allHours.length - 1) * pph).clamp(0.0, double.infinity);
+    // Schedule post-frame to avoid modifying provider during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(canvasProvider.notifier).updateMaxOffset(maxOffset);
+    });
 
     final latitude = location?.latitude ?? 35.0;
 

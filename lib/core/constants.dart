@@ -18,6 +18,10 @@ class AtmosphereConstants {
   // Depth indicator
   static const Duration depthIndicatorAutoHide = Duration(seconds: 3);
 
+  // Canvas — infinite timeline
+  static const double canvasPixelsPerHour = 80.0;
+  static const double canvasReadingAnchorFraction = 0.33;
+
   // Sizes
   static const double cardBorderRadius = 24.0;
   static const double gradientBarHeight = 48.0;

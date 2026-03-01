@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants.dart';
 import '../../../core/theme/atmosphere_colors.dart';
 import '../../../models/forecast.dart';
-import '../../../providers/scrub_provider.dart';
+import '../../../providers/canvas_provider.dart';
 import 'base_card.dart';
 
 class DewPointCard extends ConsumerWidget {
@@ -65,7 +66,7 @@ class DewPointCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scrubState = ref.watch(scrubProvider);
+    final canvasState = ref.watch(canvasProvider);
 
     return BaseCard(
       parameterName: 'Dew Point',
@@ -73,8 +74,9 @@ class DewPointCard extends ConsumerWidget {
       body: CustomPaint(
         painter: _DewPointPainter(
           hours: hours,
-          scrubPosition: scrubState.position,
-          isScrubbing: scrubState.isScrubbing,
+          canvasOffsetPx: canvasState.offsetPx,
+          isPanning: canvasState.isPanning,
+          pixelsPerHour: AtmosphereConstants.canvasPixelsPerHour,
           nightBoundaryIndices: nightBoundaryIndices,
         ),
         size: Size.infinite,
@@ -86,20 +88,27 @@ class DewPointCard extends ConsumerWidget {
 
 class _DewPointPainter extends CustomPainter {
   final List<HourlyForecast> hours;
-  final double scrubPosition;
-  final bool isScrubbing;
+  final double canvasOffsetPx;
+  final bool isPanning;
+  final double pixelsPerHour;
   final List<int> nightBoundaryIndices;
 
   _DewPointPainter({
     required this.hours,
-    required this.scrubPosition,
-    required this.isScrubbing,
+    required this.canvasOffsetPx,
+    required this.isPanning,
+    required this.pixelsPerHour,
     this.nightBoundaryIndices = const [],
   });
+
+  double get _anchorFraction => AtmosphereConstants.canvasReadingAnchorFraction;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (hours.isEmpty) return;
+
+    final anchorScreenX = _anchorFraction * size.width;
+    final tx = anchorScreenX - canvasOffsetPx;
 
     // Find temperature range for scaling
     final allTemps = [
@@ -114,16 +123,16 @@ class _DewPointPainter extends CustomPainter {
       return size.height - ((temp - minTemp) / range) * size.height;
     }
 
-    double xForIndex(int i) {
-      if (hours.length <= 1) return size.width / 2;
-      return (i / (hours.length - 1)) * size.width;
-    }
+    // --- Translated data layer ---
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.translate(tx, 0);
 
     // Temperature line points
     final tempPoints = <Offset>[];
     final dewPoints = <Offset>[];
     for (var i = 0; i < hours.length; i++) {
-      final x = xForIndex(i);
+      final x = i * pixelsPerHour;
       tempPoints.add(Offset(x, yForTemp(hours[i].temperatureC)));
       dewPoints.add(Offset(x, yForTemp(hours[i].dewPointC)));
     }
@@ -150,7 +159,8 @@ class _DewPointPainter extends CustomPainter {
     spreadPath.close();
 
     // Color the spread zone — red when narrow, blue when safe
-    final minSpread = hours.map((h) => h.dewSpreadC).reduce((a, b) => a < b ? a : b);
+    final minSpread =
+        hours.map((h) => h.dewSpreadC).reduce((a, b) => a < b ? a : b);
     final spreadAlpha = minSpread < 3 ? 0.25 : 0.12;
     final spreadColor = minSpread < 3
         ? const Color(0xFFFF6B6B).withValues(alpha: spreadAlpha)
@@ -163,14 +173,15 @@ class _DewPointPainter extends CustomPainter {
     // Draw dew point line (dashed appearance via lower opacity)
     _drawLine(canvas, dewPoints, AtmosphereColors.blueGrey);
 
-    // Critical threshold zone (5°C spread)
-    // Show labels
+    // Labels — draw at positions relative to data
     final labelStyle = TextStyle(
       color: Colors.white.withValues(alpha: 0.5),
       fontSize: 10,
     );
-    _paintLabel(canvas, 'Temp', Offset(4, tempPoints.first.dy - 14), labelStyle);
-    _paintLabel(canvas, 'Dew Pt', Offset(4, dewPoints.first.dy + 4), labelStyle);
+    _paintLabel(
+        canvas, 'Temp', Offset(4, tempPoints.first.dy - 14), labelStyle);
+    _paintLabel(
+        canvas, 'Dew Pt', Offset(4, dewPoints.first.dy + 4), labelStyle);
 
     // Night boundary separators
     if (nightBoundaryIndices.isNotEmpty && hours.length > 1) {
@@ -178,35 +189,43 @@ class _DewPointPainter extends CustomPainter {
         ..color = Colors.white.withValues(alpha: 0.12)
         ..strokeWidth = 1.0;
       for (final idx in nightBoundaryIndices) {
-        final bx = xForIndex(idx);
+        final bx = idx * pixelsPerHour;
         canvas.drawLine(Offset(bx, 0), Offset(bx, size.height), boundaryPaint);
       }
     }
 
-    // Scrub indicator
-    final x = scrubPosition * size.width;
+    canvas.restore();
+
+    // --- Fixed viewport layer (cursor indicator) ---
+    final cursorAlpha = isPanning ? 0.8 : 0.3;
     canvas.drawLine(
-      Offset(x, 0),
-      Offset(x, size.height),
+      Offset(anchorScreenX, 0),
+      Offset(anchorScreenX, size.height),
       Paint()
-        ..color = Colors.white.withValues(alpha: isScrubbing ? 0.8 : 0.3)
-        ..strokeWidth = isScrubbing ? 1.5 : 1.0,
+        ..color = Colors.white.withValues(alpha: cursorAlpha)
+        ..strokeWidth = isPanning ? 1.5 : 1.0,
     );
 
-    // Scrub value dots
-    if (isScrubbing) {
-      final fracIdx = scrubPosition * (hours.length - 1);
+    // Cursor value dots
+    if (isPanning && hours.length > 1) {
+      final fracIdx = canvasOffsetPx / pixelsPerHour;
       final idx = fracIdx.floor().clamp(0, hours.length - 2);
       final t = fracIdx - idx;
-      final tempY = tempPoints[idx].dy * (1 - t) + tempPoints[(idx + 1).clamp(0, tempPoints.length - 1)].dy * t;
-      final dewY = dewPoints[idx].dy * (1 - t) + dewPoints[(idx + 1).clamp(0, dewPoints.length - 1)].dy * t;
+      final tempY = tempPoints[idx].dy * (1 - t) +
+          tempPoints[(idx + 1).clamp(0, tempPoints.length - 1)].dy * t;
+      final dewY = dewPoints[idx].dy * (1 - t) +
+          dewPoints[(idx + 1).clamp(0, dewPoints.length - 1)].dy * t;
 
+      // Convert data-space Y back to screen-space (account for translate)
+      // Since Y is not translated, the values are already in screen space
       canvas.drawCircle(
-        Offset(x, tempY), 4,
+        Offset(anchorScreenX, tempY),
+        4,
         Paint()..color = Colors.white.withValues(alpha: 0.9),
       );
       canvas.drawCircle(
-        Offset(x, dewY), 4,
+        Offset(anchorScreenX, dewY),
+        4,
         Paint()..color = AtmosphereColors.blueGrey.withValues(alpha: 0.9),
       );
     }
@@ -232,7 +251,8 @@ class _DewPointPainter extends CustomPainter {
     );
   }
 
-  void _paintLabel(Canvas canvas, String text, Offset offset, TextStyle style) {
+  void _paintLabel(
+      Canvas canvas, String text, Offset offset, TextStyle style) {
     final tp = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
@@ -242,7 +262,6 @@ class _DewPointPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DewPointPainter old) {
-    return old.scrubPosition != scrubPosition ||
-        old.isScrubbing != isScrubbing;
+    return old.canvasOffsetPx != canvasOffsetPx || old.isPanning != isPanning;
   }
 }

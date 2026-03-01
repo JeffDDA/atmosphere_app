@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants.dart';
-import '../../../providers/scrub_provider.dart';
+import '../../../providers/canvas_provider.dart';
 
 class BaseCard extends ConsumerWidget {
   final String parameterName;
@@ -23,15 +23,17 @@ class BaseCard extends ConsumerWidget {
     final theme = Theme.of(buildContext);
 
     return GestureDetector(
-      onHorizontalDragStart: (details) {
-        ref.read(scrubProvider.notifier).startScrub();
-        _updateScrub(buildContext, details.localPosition.dx, ref);
+      onHorizontalDragStart: (_) {
+        ref.read(canvasProvider.notifier).startPan();
       },
       onHorizontalDragUpdate: (details) {
-        _updateScrub(buildContext, details.localPosition.dx, ref);
+        final current = ref.read(canvasProvider).offsetPx;
+        ref.read(canvasProvider.notifier).updateOffset(current - details.delta.dx);
       },
-      onHorizontalDragEnd: (_) {
-        ref.read(scrubProvider.notifier).endScrub();
+      onHorizontalDragEnd: (details) {
+        ref.read(canvasProvider.notifier).endPan(
+          details.velocity.pixelsPerSecond.dx,
+        );
       },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -87,14 +89,5 @@ class BaseCard extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  void _updateScrub(BuildContext context, double localX, WidgetRef ref) {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final padding = 20.0; // card horizontal padding
-    final width = box.size.width - padding * 2 - 40; // margin + padding
-    final position = ((localX - padding) / width).clamp(0.0, 1.0);
-    ref.read(scrubProvider.notifier).updatePosition(position);
   }
 }
