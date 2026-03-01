@@ -6,6 +6,7 @@ import '../../core/theme/atmosphere_colors.dart';
 import '../../models/forecast.dart';
 import '../../providers/canvas_provider.dart';
 import '../../providers/forecast_provider.dart';
+import '../../providers/now_marker_provider.dart';
 import '../../providers/scrub_provider.dart';
 
 class GradientAnchor extends ConsumerWidget {
@@ -27,6 +28,8 @@ class GradientAnchor extends ConsumerWidget {
     }
 
     final scrubState = ref.watch(scrubProvider);
+    final canvasState = ref.watch(canvasProvider);
+    final nowMarker = ref.watch(nowMarkerProvider);
     final boundary = nightBoundaries[activeNightIndex];
     final activeHours = boundary.forecast.hours;
 
@@ -68,6 +71,9 @@ class GradientAnchor extends ConsumerWidget {
                   activeHours: activeHours,
                   localCursorPosition: _globalToLocal(scrubState.position),
                   isScrubbing: scrubState.isScrubbing,
+                  nowMarkerColor: nowMarker.glowColor,
+                  canvasOffsetPx: canvasState.offsetPx,
+                  nowCanvasPositionPx: nowMarker.nowCanvasPositionPx,
                 ),
                 size: Size.infinite,
               ),
@@ -254,11 +260,17 @@ class _GradientAnchorPainter extends CustomPainter {
   final List<HourlyForecast> activeHours;
   final double localCursorPosition;
   final bool isScrubbing;
+  final Color nowMarkerColor;
+  final double canvasOffsetPx;
+  final double nowCanvasPositionPx;
 
   _GradientAnchorPainter({
     required this.activeHours,
     required this.localCursorPosition,
     required this.isScrubbing,
+    required this.nowMarkerColor,
+    required this.canvasOffsetPx,
+    required this.nowCanvasPositionPx,
   });
 
   @override
@@ -300,27 +312,33 @@ class _GradientAnchorPainter extends CustomPainter {
     // Position cursor using local position within active night
     final cursorX = localCursorPosition * size.width;
 
-    // Cursor glow
-    final glowAlpha = isScrubbing ? 0.4 : 0.15;
-    canvas.drawCircle(
-      Offset(cursorX, size.height / 2),
-      isScrubbing ? 14 : 10,
-      Paint()
-        ..color = Colors.white.withValues(alpha: glowAlpha)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-    );
+    // Now marker fade
+    final m = _nowFadeMultiplier();
+    final lineColor = Color.lerp(nowMarkerColor, Colors.white, 1.0 - m)!;
 
-    // Cursor line
+    // Cursor glow — colored by now marker with fade
+    if (m > 0) {
+      final glowAlpha = (isScrubbing ? 0.4 : 0.15) * m;
+      canvas.drawCircle(
+        Offset(cursorX, size.height / 2),
+        isScrubbing ? 14 : 10,
+        Paint()
+          ..color = nowMarkerColor.withValues(alpha: glowAlpha)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+      );
+    }
+
+    // Cursor line — lerps from nowMarkerColor → white
     canvas.drawLine(
       Offset(cursorX, barY + 2),
       Offset(cursorX, barY + barHeight - 2),
       Paint()
-        ..color = Colors.white.withValues(alpha: isScrubbing ? 0.9 : 0.5)
+        ..color = lineColor.withValues(alpha: isScrubbing ? 0.9 : 0.5)
         ..strokeWidth = isScrubbing ? 2.5 : 1.5
         ..strokeCap = StrokeCap.round,
     );
 
-    // Cursor dot
+    // Cursor dot — stays white for contrast
     canvas.drawCircle(
       Offset(cursorX, size.height / 2),
       isScrubbing ? 5 : 3,
@@ -330,10 +348,23 @@ class _GradientAnchorPainter extends CustomPainter {
     );
   }
 
+  double _nowFadeMultiplier() {
+    final dist = (canvasOffsetPx - nowCanvasPositionPx).abs();
+    if (dist <= AtmosphereConstants.nowMarkerFadeStartPx) return 1.0;
+    if (dist >= AtmosphereConstants.nowMarkerFadeEndPx) return 0.0;
+    return 1.0 -
+        (dist - AtmosphereConstants.nowMarkerFadeStartPx) /
+            (AtmosphereConstants.nowMarkerFadeEndPx -
+                AtmosphereConstants.nowMarkerFadeStartPx);
+  }
+
   @override
   bool shouldRepaint(_GradientAnchorPainter old) {
     return old.localCursorPosition != localCursorPosition ||
         old.isScrubbing != isScrubbing ||
-        old.activeHours != activeHours;
+        old.activeHours != activeHours ||
+        old.nowMarkerColor != nowMarkerColor ||
+        old.canvasOffsetPx != canvasOffsetPx ||
+        old.nowCanvasPositionPx != nowCanvasPositionPx;
   }
 }

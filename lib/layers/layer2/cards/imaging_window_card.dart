@@ -5,6 +5,7 @@ import '../../../core/constants.dart';
 import '../../../core/theme/atmosphere_colors.dart';
 import '../../../models/forecast.dart';
 import '../../../providers/canvas_provider.dart';
+import '../../../providers/now_marker_provider.dart';
 import 'base_card.dart';
 
 class ImagingWindowCard extends ConsumerWidget {
@@ -101,6 +102,7 @@ class ImagingWindowCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canvasState = ref.watch(canvasProvider);
+    final nowMarker = ref.watch(nowMarkerProvider);
 
     return BaseCard(
       parameterName: 'Imaging Window',
@@ -113,6 +115,8 @@ class ImagingWindowCard extends ConsumerWidget {
           isPanning: canvasState.isPanning,
           pixelsPerHour: AtmosphereConstants.canvasPixelsPerHour,
           nightBoundaryIndices: nightBoundaryIndices,
+          nowMarkerColor: nowMarker.glowColor,
+          nowCanvasPositionPx: nowMarker.nowCanvasPositionPx,
         ),
         size: Size.infinite,
       ),
@@ -128,6 +132,8 @@ class _ImagingWindowPainter extends CustomPainter {
   final bool isPanning;
   final double pixelsPerHour;
   final List<int> nightBoundaryIndices;
+  final Color nowMarkerColor;
+  final double nowCanvasPositionPx;
 
   _ImagingWindowPainter({
     required this.hours,
@@ -136,6 +142,8 @@ class _ImagingWindowPainter extends CustomPainter {
     required this.isPanning,
     required this.pixelsPerHour,
     this.nightBoundaryIndices = const [],
+    required this.nowMarkerColor,
+    required this.nowCanvasPositionPx,
   });
 
   double get _anchorFraction => AtmosphereConstants.canvasReadingAnchorFraction;
@@ -238,18 +246,64 @@ class _ImagingWindowPainter extends CustomPainter {
 
     canvas.restore();
 
-    // --- Fixed viewport layer (cursor indicator) ---
+    // --- Fixed viewport layer (now marker) ---
+    final m = _nowFadeMultiplier();
+    final lineColor = Color.lerp(nowMarkerColor, Colors.white, 1.0 - m)!;
+    final lineAlpha = isPanning
+        ? AtmosphereConstants.nowMarkerLineAlphaPanning
+        : AtmosphereConstants.nowMarkerLineAlphaIdle;
+    final lineWidth = isPanning
+        ? AtmosphereConstants.nowMarkerLineWidthPanning
+        : AtmosphereConstants.nowMarkerLineWidthIdle;
+
+    // Ambient glow
+    if (m > 0) {
+      final glowRadius = isPanning
+          ? AtmosphereConstants.nowMarkerGlowRadiusPanning
+          : AtmosphereConstants.nowMarkerGlowRadiusIdle;
+      final glowAlpha = (isPanning
+              ? AtmosphereConstants.nowMarkerGlowAlphaPanning
+              : AtmosphereConstants.nowMarkerGlowAlphaIdle) *
+          m;
+      final blurSigma = isPanning
+          ? AtmosphereConstants.nowMarkerBlurSigmaPanning
+          : AtmosphereConstants.nowMarkerBlurSigmaIdle;
+
+      canvas.drawLine(
+        Offset(anchorScreenX, 0),
+        Offset(anchorScreenX, size.height),
+        Paint()
+          ..color = nowMarkerColor.withValues(alpha: glowAlpha)
+          ..strokeWidth = glowRadius
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma),
+      );
+    }
+
+    // Vertical indicator line
     canvas.drawLine(
       Offset(anchorScreenX, 0),
       Offset(anchorScreenX, size.height),
       Paint()
-        ..color = Colors.white.withValues(alpha: isPanning ? 0.8 : 0.3)
-        ..strokeWidth = isPanning ? 1.5 : 1.0,
+        ..color = lineColor.withValues(alpha: lineAlpha)
+        ..strokeWidth = lineWidth,
     );
+  }
+
+  double _nowFadeMultiplier() {
+    final dist = (canvasOffsetPx - nowCanvasPositionPx).abs();
+    if (dist <= AtmosphereConstants.nowMarkerFadeStartPx) return 1.0;
+    if (dist >= AtmosphereConstants.nowMarkerFadeEndPx) return 0.0;
+    return 1.0 -
+        (dist - AtmosphereConstants.nowMarkerFadeStartPx) /
+            (AtmosphereConstants.nowMarkerFadeEndPx -
+                AtmosphereConstants.nowMarkerFadeStartPx);
   }
 
   @override
   bool shouldRepaint(_ImagingWindowPainter old) {
-    return old.canvasOffsetPx != canvasOffsetPx || old.isPanning != isPanning;
+    return old.canvasOffsetPx != canvasOffsetPx ||
+        old.isPanning != isPanning ||
+        old.nowMarkerColor != nowMarkerColor ||
+        old.nowCanvasPositionPx != nowCanvasPositionPx;
   }
 }

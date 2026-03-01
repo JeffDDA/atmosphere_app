@@ -5,6 +5,7 @@ import '../../../core/constants.dart';
 import '../../../core/theme/atmosphere_colors.dart';
 import '../../../models/forecast.dart';
 import '../../../providers/canvas_provider.dart';
+import '../../../providers/now_marker_provider.dart';
 import 'base_card.dart';
 
 class DewPointCard extends ConsumerWidget {
@@ -67,6 +68,7 @@ class DewPointCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canvasState = ref.watch(canvasProvider);
+    final nowMarker = ref.watch(nowMarkerProvider);
 
     return BaseCard(
       parameterName: 'Dew Point',
@@ -78,6 +80,8 @@ class DewPointCard extends ConsumerWidget {
           isPanning: canvasState.isPanning,
           pixelsPerHour: AtmosphereConstants.canvasPixelsPerHour,
           nightBoundaryIndices: nightBoundaryIndices,
+          nowMarkerColor: nowMarker.glowColor,
+          nowCanvasPositionPx: nowMarker.nowCanvasPositionPx,
         ),
         size: Size.infinite,
       ),
@@ -92,6 +96,8 @@ class _DewPointPainter extends CustomPainter {
   final bool isPanning;
   final double pixelsPerHour;
   final List<int> nightBoundaryIndices;
+  final Color nowMarkerColor;
+  final double nowCanvasPositionPx;
 
   _DewPointPainter({
     required this.hours,
@@ -99,6 +105,8 @@ class _DewPointPainter extends CustomPainter {
     required this.isPanning,
     required this.pixelsPerHour,
     this.nightBoundaryIndices = const [],
+    required this.nowMarkerColor,
+    required this.nowCanvasPositionPx,
   });
 
   double get _anchorFraction => AtmosphereConstants.canvasReadingAnchorFraction;
@@ -196,18 +204,50 @@ class _DewPointPainter extends CustomPainter {
 
     canvas.restore();
 
-    // --- Fixed viewport layer (cursor indicator) ---
-    final cursorAlpha = isPanning ? 0.8 : 0.3;
+    // --- Fixed viewport layer (now marker) ---
+    final m = _nowFadeMultiplier();
+    final lineColor = Color.lerp(nowMarkerColor, Colors.white, 1.0 - m)!;
+    final lineAlpha = isPanning
+        ? AtmosphereConstants.nowMarkerLineAlphaPanning
+        : AtmosphereConstants.nowMarkerLineAlphaIdle;
+    final lineWidth = isPanning
+        ? AtmosphereConstants.nowMarkerLineWidthPanning
+        : AtmosphereConstants.nowMarkerLineWidthIdle;
+
+    // Ambient glow
+    if (m > 0) {
+      final glowRadius = isPanning
+          ? AtmosphereConstants.nowMarkerGlowRadiusPanning
+          : AtmosphereConstants.nowMarkerGlowRadiusIdle;
+      final glowAlpha = (isPanning
+              ? AtmosphereConstants.nowMarkerGlowAlphaPanning
+              : AtmosphereConstants.nowMarkerGlowAlphaIdle) *
+          m;
+      final blurSigma = isPanning
+          ? AtmosphereConstants.nowMarkerBlurSigmaPanning
+          : AtmosphereConstants.nowMarkerBlurSigmaIdle;
+
+      canvas.drawLine(
+        Offset(anchorScreenX, 0),
+        Offset(anchorScreenX, size.height),
+        Paint()
+          ..color = nowMarkerColor.withValues(alpha: glowAlpha)
+          ..strokeWidth = glowRadius
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma),
+      );
+    }
+
+    // Vertical indicator line
     canvas.drawLine(
       Offset(anchorScreenX, 0),
       Offset(anchorScreenX, size.height),
       Paint()
-        ..color = Colors.white.withValues(alpha: cursorAlpha)
-        ..strokeWidth = isPanning ? 1.5 : 1.0,
+        ..color = lineColor.withValues(alpha: lineAlpha)
+        ..strokeWidth = lineWidth,
     );
 
-    // Cursor value dots
-    if (isPanning && hours.length > 1) {
+    // Cursor value dots (always white for contrast)
+    if (hours.length > 1) {
       final fracIdx = canvasOffsetPx / pixelsPerHour;
       final idx = fracIdx.floor().clamp(0, hours.length - 2);
       final t = fracIdx - idx;
@@ -216,19 +256,31 @@ class _DewPointPainter extends CustomPainter {
       final dewY = dewPoints[idx].dy * (1 - t) +
           dewPoints[(idx + 1).clamp(0, dewPoints.length - 1)].dy * t;
 
-      // Convert data-space Y back to screen-space (account for translate)
-      // Since Y is not translated, the values are already in screen space
       canvas.drawCircle(
         Offset(anchorScreenX, tempY),
-        4,
-        Paint()..color = Colors.white.withValues(alpha: 0.9),
+        isPanning ? 5 : 3,
+        Paint()
+          ..color =
+              Colors.white.withValues(alpha: isPanning ? 0.95 : 0.5),
       );
       canvas.drawCircle(
         Offset(anchorScreenX, dewY),
-        4,
-        Paint()..color = AtmosphereColors.blueGrey.withValues(alpha: 0.9),
+        isPanning ? 5 : 3,
+        Paint()
+          ..color = AtmosphereColors.blueGrey
+              .withValues(alpha: isPanning ? 0.9 : 0.5),
       );
     }
+  }
+
+  double _nowFadeMultiplier() {
+    final dist = (canvasOffsetPx - nowCanvasPositionPx).abs();
+    if (dist <= AtmosphereConstants.nowMarkerFadeStartPx) return 1.0;
+    if (dist >= AtmosphereConstants.nowMarkerFadeEndPx) return 0.0;
+    return 1.0 -
+        (dist - AtmosphereConstants.nowMarkerFadeStartPx) /
+            (AtmosphereConstants.nowMarkerFadeEndPx -
+                AtmosphereConstants.nowMarkerFadeStartPx);
   }
 
   void _drawLine(Canvas canvas, List<Offset> points, Color color) {
@@ -262,6 +314,9 @@ class _DewPointPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DewPointPainter old) {
-    return old.canvasOffsetPx != canvasOffsetPx || old.isPanning != isPanning;
+    return old.canvasOffsetPx != canvasOffsetPx ||
+        old.isPanning != isPanning ||
+        old.nowMarkerColor != nowMarkerColor ||
+        old.nowCanvasPositionPx != nowCanvasPositionPx;
   }
 }

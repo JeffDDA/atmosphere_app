@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants.dart';
 import '../../../core/theme/atmosphere_colors.dart';
 import '../../../providers/canvas_provider.dart';
+import '../../../providers/now_marker_provider.dart';
 
 enum ChartType { area, line }
 
@@ -35,6 +36,7 @@ class ChartCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canvasState = ref.watch(canvasProvider);
+    final nowMarker = ref.watch(nowMarkerProvider);
 
     return CustomPaint(
       painter: _ChartPainter(
@@ -50,6 +52,8 @@ class ChartCard extends ConsumerWidget {
         isPanning: canvasState.isPanning,
         pixelsPerHour: AtmosphereConstants.canvasPixelsPerHour,
         nightBoundaryIndices: nightBoundaryIndices,
+        nowMarkerColor: nowMarker.glowColor,
+        nowCanvasPositionPx: nowMarker.nowCanvasPositionPx,
       ),
       size: Size.infinite,
     );
@@ -69,6 +73,8 @@ class _ChartPainter extends CustomPainter {
   final bool isPanning;
   final double pixelsPerHour;
   final List<int> nightBoundaryIndices;
+  final Color nowMarkerColor;
+  final double nowCanvasPositionPx;
 
   _ChartPainter({
     required this.values,
@@ -83,6 +89,8 @@ class _ChartPainter extends CustomPainter {
     required this.isPanning,
     required this.pixelsPerHour,
     this.nightBoundaryIndices = const [],
+    required this.nowMarkerColor,
+    required this.nowCanvasPositionPx,
   });
 
   double get _anchorFraction => AtmosphereConstants.canvasReadingAnchorFraction;
@@ -122,8 +130,8 @@ class _ChartPainter extends CustomPainter {
 
     canvas.restore();
 
-    // --- Fixed viewport layer (cursor indicator) ---
-    _drawCursorIndicator(canvas, size, anchorScreenX);
+    // --- Fixed viewport layer (now marker) ---
+    _drawNowMarker(canvas, size, anchorScreenX);
   }
 
   void _drawDataLine(
@@ -242,16 +250,61 @@ class _ChartPainter extends CustomPainter {
     }
   }
 
-  void _drawCursorIndicator(Canvas canvas, Size size, double anchorScreenX) {
-    final alpha = isPanning ? 0.8 : 0.3;
+  /// Compute fade multiplier based on distance from "now" position.
+  /// 0–fadeStart: 1.0, fadeStart–fadeEnd: linear fade, >fadeEnd: 0.0
+  double _nowFadeMultiplier() {
+    final dist = (canvasOffsetPx - nowCanvasPositionPx).abs();
+    if (dist <= AtmosphereConstants.nowMarkerFadeStartPx) return 1.0;
+    if (dist >= AtmosphereConstants.nowMarkerFadeEndPx) return 0.0;
+    return 1.0 -
+        (dist - AtmosphereConstants.nowMarkerFadeStartPx) /
+            (AtmosphereConstants.nowMarkerFadeEndPx -
+                AtmosphereConstants.nowMarkerFadeStartPx);
+  }
 
-    // Vertical indicator line at fixed screen position
+  void _drawNowMarker(Canvas canvas, Size size, double anchorScreenX) {
+    final m = _nowFadeMultiplier();
+
+    // Line color: lerp from nowMarkerColor → white based on fade
+    final lineColor = Color.lerp(nowMarkerColor, Colors.white, 1.0 - m)!;
+
+    final lineAlpha = isPanning
+        ? AtmosphereConstants.nowMarkerLineAlphaPanning
+        : AtmosphereConstants.nowMarkerLineAlphaIdle;
+    final lineWidth = isPanning
+        ? AtmosphereConstants.nowMarkerLineWidthPanning
+        : AtmosphereConstants.nowMarkerLineWidthIdle;
+
+    // Ambient glow (only when multiplier > 0)
+    if (m > 0) {
+      final glowRadius = isPanning
+          ? AtmosphereConstants.nowMarkerGlowRadiusPanning
+          : AtmosphereConstants.nowMarkerGlowRadiusIdle;
+      final glowAlpha = (isPanning
+              ? AtmosphereConstants.nowMarkerGlowAlphaPanning
+              : AtmosphereConstants.nowMarkerGlowAlphaIdle) *
+          m;
+      final blurSigma = isPanning
+          ? AtmosphereConstants.nowMarkerBlurSigmaPanning
+          : AtmosphereConstants.nowMarkerBlurSigmaIdle;
+
+      canvas.drawLine(
+        Offset(anchorScreenX, 0),
+        Offset(anchorScreenX, size.height),
+        Paint()
+          ..color = nowMarkerColor.withValues(alpha: glowAlpha)
+          ..strokeWidth = glowRadius
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma),
+      );
+    }
+
+    // Vertical indicator line
     canvas.drawLine(
       Offset(anchorScreenX, 0),
       Offset(anchorScreenX, size.height),
       Paint()
-        ..color = Colors.white.withValues(alpha: alpha)
-        ..strokeWidth = isPanning ? 1.5 : 1.0,
+        ..color = lineColor.withValues(alpha: lineAlpha)
+        ..strokeWidth = lineWidth,
     );
 
     // Value dot on the primary line at cursor position
@@ -264,18 +317,18 @@ class _ChartPainter extends CustomPainter {
       final dotY = size.height -
           (interpolatedValue / maxValue).clamp(0.0, 1.0) * size.height;
 
-      // Glow
-      if (isPanning) {
+      // Dot glow (panning only, colored by now marker)
+      if (isPanning && m > 0) {
         canvas.drawCircle(
           Offset(anchorScreenX, dotY),
           8,
           Paint()
-            ..color = color.withValues(alpha: 0.3)
+            ..color = nowMarkerColor.withValues(alpha: 0.3 * m)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
         );
       }
 
-      // Dot
+      // White dot
       canvas.drawCircle(
         Offset(anchorScreenX, dotY),
         isPanning ? 5 : 3,
@@ -291,6 +344,8 @@ class _ChartPainter extends CustomPainter {
   bool shouldRepaint(_ChartPainter old) {
     return old.canvasOffsetPx != canvasOffsetPx ||
         old.isPanning != isPanning ||
-        old.values != values;
+        old.values != values ||
+        old.nowMarkerColor != nowMarkerColor ||
+        old.nowCanvasPositionPx != nowCanvasPositionPx;
   }
 }

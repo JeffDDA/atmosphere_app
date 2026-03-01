@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart' show ClampingScrollSimulation;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants.dart';
+import 'now_marker_provider.dart';
 import 'scrub_provider.dart';
 
 class CanvasState {
@@ -24,6 +25,7 @@ class CanvasNotifier extends Notifier<CanvasState> {
   Ticker? _ticker;
   Simulation? _simulation;
   double _maxOffset = 0;
+  bool _hasInitialized = false;
 
   @override
   CanvasState build() {
@@ -35,10 +37,27 @@ class CanvasNotifier extends Notifier<CanvasState> {
   /// Called by Layer2View when layout or data changes.
   void updateMaxOffset(double maxOffset) {
     _maxOffset = maxOffset;
+
+    // On first call, jump canvas to "now" position
+    if (!_hasInitialized && _maxOffset > 0) {
+      _hasInitialized = true;
+      final nowInfo = ref.read(nowMarkerProvider);
+      jumpToNow(nowInfo.nowCanvasPositionPx);
+      return;
+    }
+
     if (state.offsetPx > _maxOffset && _maxOffset > 0) {
       state = state.copyWith(offsetPx: _maxOffset);
       _syncScrub();
     }
+  }
+
+  /// Jump canvas so "now" aligns with the reading anchor.
+  void jumpToNow(double nowOffsetPx) {
+    _stopMomentum();
+    final clamped = nowOffsetPx.clamp(0.0, _maxOffset);
+    state = state.copyWith(offsetPx: clamped);
+    _syncScrub();
   }
 
   void startPan() {
