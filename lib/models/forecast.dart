@@ -23,6 +23,10 @@ class HourlyForecast {
   final double bltCeilingM; // meters AGL, planetary boundary layer height (HPBL)
   final double jsWindSpeedKt; // knots, 250mb wind speed
 
+  // Darkness
+  final double limitingMagnitude; // actual NELM accounting for all factors
+  final double darknessCeiling; // theoretical max NELM if LP=0 (Sugerman output)
+
   const HourlyForecast({
     required this.time,
     required this.cloudCoverPercent,
@@ -43,6 +47,8 @@ class HourlyForecast {
     this.gltHeatFlux = 0,
     this.bltCeilingM = 500,
     this.jsWindSpeedKt = 30,
+    this.limitingMagnitude = 5.5,
+    this.darknessCeiling = 7.8,
   });
 }
 

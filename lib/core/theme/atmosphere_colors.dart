@@ -33,6 +33,24 @@ class AtmosphereColors {
   static const Color layer3Dot = mediumBlue;
   static const Color layer4Dot = blueGrey;
 
+  // CDS Darkness color vocabulary
+  static const Color darknessBlack = Color(0xFF0A0A14); // Mag 7.6+
+  static const Color darknessDeepBlue = Color(0xFF0D1B4A); // Mag 6.5–7.5
+  static const Color darknessBlue = Color(0xFF2E5090); // Mag 5.5–6.4
+  static const Color darknessLightBlue = Color(0xFF5A7B9A); // Mag 4.0–5.4
+  static const Color darknessTurquoise = Color(0xFF4A9A8A); // Mag 2.0–3.9
+  static const Color darknessYellow = Color(0xFFB8A860); // Mag < 2.0
+  static const Color lpFloorAmber = Color(0xFFD4A843); // LP floor band
+
+  static Color forLimitingMagnitude(double mag) {
+    if (mag >= 7.6) return darknessBlack;
+    if (mag >= 6.5) return darknessDeepBlue;
+    if (mag >= 5.5) return darknessBlue;
+    if (mag >= 4.0) return darknessLightBlue;
+    if (mag >= 2.0) return darknessTurquoise;
+    return darknessYellow;
+  }
+
   static Color forCondition(ConditionState condition) {
     switch (condition) {
       case ConditionState.exceptional:

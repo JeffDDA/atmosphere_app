@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
 import '../../models/forecast.dart';
+import '../../models/location.dart';
 import '../../providers/canvas_provider.dart';
 import '../../providers/forecast_provider.dart';
 import '../../providers/layer3_entry_provider.dart';
 import '../../providers/location_provider.dart';
 import 'cards/aurora_card.dart';
 import 'cards/cloud_cover_card.dart';
+import 'cards/darkness_card.dart';
 import 'cards/dew_point_card.dart';
 import 'cards/imaging_window_card.dart';
 import 'cards/moon_card.dart';
@@ -45,8 +47,6 @@ class Layer2View extends ConsumerWidget {
       ref.read(canvasProvider.notifier).updateMaxOffset(maxOffset);
     });
 
-    final latitude = location?.latitude ?? 35.0;
-
     // Night boundary start indices for card separator lines
     final nightBoundaryIndices = nightBoundaries
         .skip(1)
@@ -55,7 +55,7 @@ class Layer2View extends ConsumerWidget {
 
     // Build relevance-ordered card list with entry domain Listeners
     final cards =
-        _buildRelevanceStack(allHours, nightBoundaryIndices, latitude, ref);
+        _buildRelevanceStack(allHours, nightBoundaryIndices, location, ref);
 
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -100,10 +100,11 @@ class Layer2View extends ConsumerWidget {
   List<Widget> _buildRelevanceStack(
     List<HourlyForecast> hours,
     List<int> nightBoundaryIndices,
-    double latitude,
+    ObservatoryLocation? location,
     WidgetRef ref,
   ) {
     final cards = <Widget>[];
+    final latitude = location?.latitude ?? 35.0;
 
     // 1. Aurora rises to top when above latitude threshold
     final showAurora = AuroraCard.shouldShow(hours, latitude);
@@ -144,6 +145,16 @@ class Layer2View extends ConsumerWidget {
       CloudCoverCard(
         hours: hours,
         nightBoundaryIndices: nightBoundaryIndices,
+      ),
+      ref,
+    ));
+    cards.add(_domainCard(
+      'darkness',
+      DarknessCard(
+        hours: hours,
+        nightBoundaryIndices: nightBoundaryIndices,
+        lpLimitingMagnitude: location?.lpLimitingMagnitude ?? 6.0,
+        bortleClass: location?.bortleClass ?? 4,
       ),
       ref,
     ));

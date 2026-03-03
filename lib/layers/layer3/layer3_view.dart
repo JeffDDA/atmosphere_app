@@ -74,6 +74,13 @@ class Layer3View extends ConsumerWidget {
           observatoryElevationM: elevationM,
           nightBoundaryIndices: nightBoundaryIndices,
         );
+      case 'darkness':
+        return Center(
+          child: Text(
+            'Darkness Detail \u2014 Coming Soon',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+        );
       // Future: 'cloud_cover', 'transparency', 'wind', 'imaging_window'
       default:
         // Default to seeing until other detail cards are built
