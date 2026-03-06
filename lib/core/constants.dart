@@ -59,4 +59,14 @@ class AtmosphereConstants {
   static const double classicMinimapTimeAxisHeight = 12.0;
   static const double classicMinimapLabelWidth = 0.0; // no labels on minimap
   static const double classicSelectionBoxMinWidth = 30.0;
+
+  // Classic Mode — lens distortion
+  static const double classicLensFocalDepth = 0.75; // inner 75% = no distortion
+  static const double classicLensRadius = 0.38; // fraction of viewport width
+  static const bool classicLensChromaticAberration = false;
+  static const double classicLensPinchDeadZone = 40.0; // points before tracking
+  static const double classicLensPinchCommit = 220.0; // points for 50% (commit)
+  static const double classicLensSpringStiffness = 200.0;
+  static const double classicLensSpringDampingRatio = 1.0; // critically damped
+  static const double classicLensCommitThreshold = 0.50;
 }

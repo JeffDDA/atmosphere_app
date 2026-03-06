@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/ddac_theme.dart';
 import '../providers/classic_canvas_provider.dart';
+import '../providers/classic_lens_provider.dart';
 import '../providers/location_provider.dart';
-import '../widgets/classic/classic_grid.dart';
+import '../widgets/classic/classic_lens_shader.dart';
 import '../widgets/classic/classic_minimap.dart';
 
 class ClassicModeScreen extends ConsumerWidget {
@@ -14,14 +15,18 @@ class ClassicModeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final location = ref.watch(activeLocationProvider);
     final locationName = location?.name ?? 'Unknown';
+    final lensState = ref.watch(classicLensProvider);
 
     return Scaffold(
       backgroundColor: DDACTheme.chartBackground,
       body: SafeArea(
         child: GestureDetector(
-          // Tap anywhere outside tooltip to dismiss
           onTap: () {
-            ref.read(classicTooltipProvider.notifier).dismiss();
+            if (lensState.isFullyOpen) {
+              ref.read(classicLensProvider.notifier).closeLens();
+            } else {
+              ref.read(classicTooltipProvider.notifier).dismiss();
+            }
           },
           behavior: HitTestBehavior.translucent,
           child: Column(
@@ -68,9 +73,9 @@ class ClassicModeScreen extends ConsumerWidget {
                 height: 1,
                 color: DDACTheme.divider,
               ),
-              // Interaction surface
+              // Interaction surface — grid + lens shader + focal card
               const Expanded(
-                child: ClassicGrid(),
+                child: ClassicLensShader(),
               ),
             ],
           ),
