@@ -7,6 +7,7 @@ import '../layers/claritas_shell.dart';
 import '../models/layer_id.dart';
 import '../providers/location_provider.dart';
 import '../providers/navigation_provider.dart';
+import 'classic_mode_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -102,6 +103,27 @@ class _LocationGrid extends ConsumerWidget {
                           ),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () {
+                            ref
+                                .read(activeLocationIndexProvider.notifier)
+                                .select(index);
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const ClassicModeScreen(),
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            'Classic',
+                            style: TextStyle(
+                              color: Colors.white54,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                       ],
                     ),

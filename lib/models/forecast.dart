@@ -3,6 +3,7 @@ import 'condition_state.dart';
 class HourlyForecast {
   final DateTime time;
   final double cloudCoverPercent;
+  final double ecmwfCloudPercent;
   final int seeing; // 1-5
   final int transparency; // 1-5
   final double windMph;
@@ -30,6 +31,7 @@ class HourlyForecast {
   const HourlyForecast({
     required this.time,
     required this.cloudCoverPercent,
+    this.ecmwfCloudPercent = 0,
     required this.seeing,
     required this.transparency,
     required this.windMph,
