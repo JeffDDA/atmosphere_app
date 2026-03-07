@@ -76,10 +76,7 @@ class ClassicLayer1 extends ConsumerWidget {
           // LP Cylinder
           const Expanded(
             flex: 3,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
-              child: LPGlobeWidget(),
-            ),
+            child: LPGlobeWidget(),
           ),
         ],
       ),

@@ -79,7 +79,7 @@ float rayCylinder(vec3 ro, vec3 rd, out vec3 outN) {
 
 void main() {
   vec2 fragCoord = FlutterFragCoord().xy;
-  vec2 uv = (fragCoord - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
+  vec2 uv = (fragCoord - 0.5 * uResolution) / uResolution.x;
 
   // Camera
   float fovRad = FOV_DEG * DEG2RAD;

@@ -141,8 +141,8 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
         );
       }
 
-      // Drag: horizontal = yaw, vertical = pan
-      _yaw += delta.dx * AtmosphereConstants.globeRotationSensitivity;
+      // Drag: horizontal = yaw (negated for natural panning), vertical = pan
+      _yaw -= delta.dx * AtmosphereConstants.globeRotationSensitivity;
       _panY = (_panY - delta.dy * AtmosphereConstants.globeRotationSensitivity)
           .clamp(-_cylHalfHeight, _cylHalfHeight);
     });
