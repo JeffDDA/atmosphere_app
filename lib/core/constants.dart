@@ -68,5 +68,10 @@ class AtmosphereConstants {
   static const double globeMaxZoom = 8.0;
   static const double globeRotationSensitivity = 0.006;
   static const double globeSpinDurationMs = 800;
+  static const double globeZoomStep = 0.8; // multiplier per tap
   static const double globeFov = 50.0; // degrees — must match shader
+
+  // LP Map (full-screen)
+  static const double lpMapMinZoom = 1.2;
+  static const double lpMapMaxZoom = 8.0;
 }

@@ -1,0 +1,20 @@
+flutter_native_splash:
+  # DDA brand — burgundy background with dragon logo
+  color: "#731b1d"
+  image: assets/splash_icon.png
+
+  # Dark mode — dark background matching Atmosphere theme
+  color_dark: "#06060E"
+  image_dark: assets/splash_icon.png
+
+  # Platforms
+  android: true
+  ios: true
+  web: false
+
+  # Android 12+ splash screen settings
+  android_12:
+    color: "#731b1d"
+    color_dark: "#06060E"
+    image: assets/splash_icon.png
+    image_dark: assets/splash_icon.png

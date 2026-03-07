@@ -8,15 +8,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants.dart';
 import '../../core/theme/atmosphere_colors.dart';
 import '../../models/location.dart';
+import '../../providers/layer2_mode_provider.dart';
 import '../../providers/location_provider.dart';
+import 'lp_cylinder_painter.dart';
 
-const _crimson = Color(0xFF8B0000);
-const _cylHalfHeight = 1.22; // must match CYL_H in shader
-const _latTop = 75.0; // must match LAT_TOP in shader
-const _latBot = -65.0; // must match LAT_BOT in shader
+/// True when the LP globe is handling a pinch/scale gesture.
+/// ClaritasShell checks this to avoid triggering layer transitions.
+final lpGlobeInteractingProvider = StateProvider<bool>((ref) => false);
 
 /// Compact LP cylinder for Layer 1 — renders VIIRS atlas wrapped on a
 /// 3D cylinder via GLSL. Drag to spin, pinch to zoom.
+/// When zoom hits the minimum limit during a pinch-out, hands off to
+/// ClaritasShell for transition to full-screen LP map (Layer 2 alternate).
 class LPGlobeWidget extends ConsumerStatefulWidget {
   const LPGlobeWidget({super.key});
 
@@ -25,7 +28,7 @@ class LPGlobeWidget extends ConsumerStatefulWidget {
 }
 
 class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   double _yaw = 0;
   double _zoom = AtmosphereConstants.globeDefaultZoom;
   double _panY = 0;
@@ -41,6 +44,17 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
   double? _baseZoom;
   Offset? _lastFocalPoint;
 
+  // Tap detection within scale gesture
+  Offset? _scaleStartPoint;
+  DateTime? _scaleStartTime;
+  DateTime? _lastTapTime;
+  static const _tapMaxDistance = 10.0;
+  static const _tapMaxDuration = Duration(milliseconds: 300);
+  static const _doubleTapWindow = Duration(milliseconds: 400);
+
+  // Handoff state — freeze gestures once we've triggered the handoff
+  bool _handoffFired = false;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +66,15 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
     )..addListener(_onSpinTick);
     _loadShader();
     _loadAtlas();
+
+    // Pick up camera state from the shared provider (returning from LP map)
+    final viewState = ref.read(lpGlobeViewStateProvider);
+    _yaw = viewState.yaw;
+    _zoom = viewState.zoom.clamp(
+      AtmosphereConstants.globeMinZoom,
+      AtmosphereConstants.globeMaxZoom,
+    );
+    _panY = viewState.panY;
   }
 
   Future<void> _loadShader() async {
@@ -120,14 +143,42 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
       ..forward();
   }
 
+  // ── Handoff ─────────────────────────────────────────────────────────────────
+  void _initiateHandoff(double currentSpan) {
+    if (_handoffFired) return;
+    _handoffFired = true;
+
+    // Sync camera state to the shared provider
+    ref.read(lpGlobeViewStateProvider.notifier).sync(
+          yaw: _yaw,
+          zoom: _zoom,
+          panY: _panY,
+        );
+
+    // Set layer 2 mode to LP map
+    ref.read(layer2ModeProvider.notifier).state = 'lp_map';
+
+    // Release globe interaction so ClaritasShell can take over
+    ref.read(lpGlobeInteractingProvider.notifier).state = false;
+
+    // Fire handoff signal with current span
+    ref.read(lpGlobePinchHandoffProvider.notifier).state = currentSpan;
+  }
+
   // ── Gestures ────────────────────────────────────────────────────────────────
   void _onScaleStart(ScaleStartDetails details) {
     _spinController.stop();
     _lastFocalPoint = details.localFocalPoint;
+    _scaleStartPoint = details.localFocalPoint;
+    _scaleStartTime = DateTime.now();
     _baseZoom = _zoom;
+    _handoffFired = false;
+    ref.read(lpGlobeInteractingProvider.notifier).state = true;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_handoffFired) return;
+
     final delta =
         details.localFocalPoint - (_lastFocalPoint ?? details.localFocalPoint);
     _lastFocalPoint = details.localFocalPoint;
@@ -135,7 +186,20 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
     setState(() {
       // Always apply scale — scale is 1.0 for single finger, changes on pinch
       if (_baseZoom != null && (details.scale - 1.0).abs() > 0.01) {
-        _zoom = (_baseZoom! / details.scale).clamp(
+        final rawZoom = _baseZoom! / details.scale;
+
+        // Pinch-out handoff: zoom wants to go below min, hand off to ClaritasShell
+        if (rawZoom < AtmosphereConstants.globeMinZoom &&
+            details.pointerCount >= 2) {
+          _zoom = AtmosphereConstants.globeMinZoom;
+          // Compute current finger span from the scale gesture
+          // Scale ratio × initial baseline → approximate pixel span
+          final approxSpan = details.scale * 100.0; // heuristic span
+          _initiateHandoff(approxSpan);
+          return;
+        }
+
+        _zoom = rawZoom.clamp(
           AtmosphereConstants.globeMinZoom,
           AtmosphereConstants.globeMaxZoom,
         );
@@ -144,13 +208,54 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
       // Drag: horizontal = yaw (negated for natural panning), vertical = pan
       _yaw -= delta.dx * AtmosphereConstants.globeRotationSensitivity;
       _panY = (_panY - delta.dy * AtmosphereConstants.globeRotationSensitivity)
-          .clamp(-_cylHalfHeight, _cylHalfHeight);
+          .clamp(-cylHalfHeight, cylHalfHeight);
     });
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    if (_handoffFired) {
+      _lastFocalPoint = null;
+      _scaleStartPoint = null;
+      _scaleStartTime = null;
+      _baseZoom = null;
+      return;
+    }
+
+    // Detect tap: minimal movement + short duration
+    if (_scaleStartPoint != null && _scaleStartTime != null) {
+      final distance =
+          (_lastFocalPoint! - _scaleStartPoint!).distance;
+      final duration = DateTime.now().difference(_scaleStartTime!);
+
+      if (distance < _tapMaxDistance && duration < _tapMaxDuration) {
+        final now = DateTime.now();
+        if (_lastTapTime != null &&
+            now.difference(_lastTapTime!) < _doubleTapWindow) {
+          // Double tap — let ClaritasShell handle ascend
+          _lastTapTime = null;
+        } else {
+          // Single tap — set LP map mode so ClaritasShell descends to LP map
+          _lastTapTime = now;
+          Future.delayed(_doubleTapWindow, () {
+            if (_lastTapTime == now) {
+              _lastTapTime = null;
+              ref.read(lpGlobeViewStateProvider.notifier).sync(
+                    yaw: _yaw,
+                    zoom: _zoom,
+                    panY: _panY,
+                  );
+              ref.read(layer2ModeProvider.notifier).state = 'lp_map';
+            }
+          });
+        }
+      }
+    }
+
     _lastFocalPoint = null;
+    _scaleStartPoint = null;
+    _scaleStartTime = null;
     _baseZoom = null;
+    ref.read(lpGlobeInteractingProvider.notifier).state = false;
   }
 
   @override
@@ -169,7 +274,6 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
     final locations = locationsAsync.valueOrNull ?? [];
 
     return GestureDetector(
-      onTap: () {},
       onScaleStart: _onScaleStart,
       onScaleUpdate: _onScaleUpdate,
       onScaleEnd: _onScaleEnd,
@@ -181,7 +285,7 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
               borderRadius: BorderRadius.circular(12),
               child: (_shader != null && _atlasImage != null)
                   ? CustomPaint(
-                      painter: _LPCylinderPainter(
+                      painter: LPCylinderPainter(
                         shader: _shader!,
                         atlas: _atlasImage!,
                         yaw: _yaw,
@@ -222,123 +326,6 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
       ),
     );
   }
-}
-
-// ── Cylinder Painter ──────────────────────────────────────────────────────────
-
-class _LPCylinderPainter extends CustomPainter {
-  _LPCylinderPainter({
-    required this.shader,
-    required this.atlas,
-    required this.yaw,
-    required this.zoom,
-    required this.panY,
-    required this.locations,
-    this.activeLocation,
-  });
-
-  final ui.FragmentShader shader;
-  final ui.Image atlas;
-  final double yaw;
-  final double zoom;
-  final double panY;
-  final List<ObservatoryLocation> locations;
-  final ObservatoryLocation? activeLocation;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // uResolution (vec2)
-    shader.setFloat(0, size.width);
-    shader.setFloat(1, size.height);
-    // uYaw (float)
-    shader.setFloat(2, yaw);
-    // uZoom (float)
-    shader.setFloat(3, zoom);
-    // uPanY (float)
-    shader.setFloat(4, panY);
-    // uAtlas (sampler2D)
-    shader.setImageSampler(0, atlas);
-
-    final paint = Paint()..shader = shader;
-    canvas.drawRect(Offset.zero & size, paint);
-
-    _drawSiteMarkers(canvas, size);
-  }
-
-  void _drawSiteMarkers(Canvas canvas, Size size) {
-    final fovRad = AtmosphereConstants.globeFov * math.pi / 180.0;
-    final focalLen = 1.0 / math.tan(fovRad * 0.5);
-    final minDim = math.min(size.width, size.height);
-
-    for (final loc in locations) {
-      // Place marker on cylinder surface
-      final lngRad = loc.longitude * math.pi / 180.0;
-      final angle = lngRad + yaw;
-
-      // 3D position on cylinder (radius=1, Y from latitude)
-      final cx = math.sin(angle);
-      final cz = math.cos(angle);
-      // Latitude → Y on cylinder: map lat range [LAT_BOT, LAT_TOP] to [-H, +H]
-      final latClamped = loc.latitude.clamp(_latBot, _latTop);
-      final cy = ((latClamped - _latBot) / (_latTop - _latBot) * 2.0 - 1.0) *
-          _cylHalfHeight;
-
-      // Skip if on back side of cylinder
-      if (cz < 0.05) continue;
-
-      // Perspective projection (camera at y=panY, z=-zoom)
-      final pz = cz + zoom;
-      if (pz < 0.01) continue;
-      final px = (cx * focalLen / pz) * minDim + size.width * 0.5;
-      final py = (-(cy - panY) * focalLen / pz) * minDim + size.height * 0.5;
-
-      if (px < -10 ||
-          px > size.width + 10 ||
-          py < -10 ||
-          py > size.height + 10) {
-        continue;
-      }
-
-      final isActive = activeLocation != null &&
-          loc.latitude == activeLocation!.latitude &&
-          loc.longitude == activeLocation!.longitude;
-
-      final center = Offset(px, py);
-
-      if (isActive) {
-        canvas.drawCircle(center, 6, Paint()..color = _crimson);
-        canvas.drawCircle(
-          center,
-          10,
-          Paint()
-            ..color = _crimson.withValues(alpha: 0.8)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5,
-        );
-      } else {
-        final bortleIdx =
-            (loc.bortleClass - 1).clamp(0, AtmosphereColors.bortleColors.length - 1);
-        canvas.drawCircle(center, 3, Paint()..color = AtmosphereColors.bortleColors[bortleIdx]);
-        if (loc.bortleClass <= 2) {
-          canvas.drawCircle(
-            center,
-            3.5,
-            Paint()
-              ..color = const Color(0x33FFFFFF)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 0.5,
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_LPCylinderPainter old) =>
-      old.yaw != yaw ||
-      old.zoom != zoom ||
-      old.panY != panY ||
-      old.activeLocation != activeLocation;
 }
 
 // ── Bortle Legend Strip ────────────────────────────────────────────────────────

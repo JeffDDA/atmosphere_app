@@ -3,12 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants.dart';
 import '../models/layer_id.dart';
+import '../providers/layer2_mode_provider.dart';
 import '../providers/navigation_provider.dart';
 import '../widgets/condition_flags.dart';
 import '../widgets/depth_indicator.dart';
+import '../widgets/lp_globe/lp_globe_widget.dart';
 import 'claritas_transition.dart';
 import 'layer1/classic_layer1.dart';
 import 'layer2/layer2_view.dart';
+import 'layer2/lp_map_view.dart';
 import 'layer3/layer3_view.dart';
 
 class ClaritasShell extends ConsumerStatefulWidget {
@@ -101,6 +104,7 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
   // --- Tap handling ---
 
   void _handleTap() {
+    if (ref.read(lpGlobeInteractingProvider)) return;
     final now = DateTime.now();
 
     // Double-tap detection
@@ -137,6 +141,11 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
     if (navState.isTransitioning) return;
     if (navState.currentLayer == LayerId.home) return;
 
+    // Clear LP map mode when ascending from Layer 2
+    if (navState.currentLayer == LayerId.layer2) {
+      ref.read(layer2ModeProvider.notifier).state = null;
+    }
+
     final nav = ref.read(navigationProvider.notifier);
     nav.ascendDoubleTap();
     _controller.startTapTransition(TransitionDirection.ascend);
@@ -151,6 +160,21 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
   void _handleScaleUpdate(ScaleUpdateDetails details) {
     if (details.pointerCount < 2) return;
     if (_controller.isAnimating) return;
+    // Don't hijack pinch when LP globe is handling it
+    if (ref.read(lpGlobeInteractingProvider)) return;
+
+    // Check for handoff signal from LP globe — auto-complete descend
+    final handoffSpan = ref.read(lpGlobePinchHandoffProvider);
+    if (handoffSpan != null) {
+      ref.read(lpGlobePinchHandoffProvider.notifier).state = null;
+      // Immediately trigger a tap-style descend transition (no dead zone)
+      final navState = ref.read(navigationProvider);
+      if (!navState.isTransitioning) {
+        ref.read(navigationProvider.notifier).descendTap();
+        _controller.startTapTransition(TransitionDirection.descend);
+      }
+      return;
+    }
 
     // Ensure we have a valid initial span
     if (_initialSpan <= 0 && _activePointers.length >= 2) {
@@ -198,6 +222,10 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
       case LayerId.layer1:
         return const ClassicLayer1();
       case LayerId.layer2:
+        final mode = ref.watch(layer2ModeProvider);
+        if (mode == 'lp_map') {
+          return const LPMapView();
+        }
         return const Layer2View();
       case LayerId.layer3:
         return const Layer3View();
@@ -221,6 +249,14 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
     final currentLayer = navState.currentLayer;
     final targetLayer = navState.targetLayer;
     final isTransitioning = navState.isTransitioning;
+
+    // Listen for LP map ascend requests
+    ref.listen<bool>(lpMapAscendRequestProvider, (prev, next) {
+      if (next) {
+        ref.read(lpMapAscendRequestProvider.notifier).state = false;
+        _handleDoubleTap();
+      }
+    });
 
     return Scaffold(
       body: Listener(
