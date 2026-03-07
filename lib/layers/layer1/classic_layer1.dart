@@ -7,6 +7,7 @@ import '../../providers/location_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../../widgets/classic/classic_grid.dart';
 import '../../widgets/classic/classic_minimap.dart';
+import '../../widgets/lp_globe/lp_globe_widget.dart';
 
 class ClassicLayer1 extends ConsumerWidget {
   const ClassicLayer1({super.key});
@@ -69,7 +70,16 @@ class ClassicLayer1 extends ConsumerWidget {
           ),
           // Grid
           const Expanded(
+            flex: 2,
             child: ClassicGrid(),
+          ),
+          // LP Cylinder
+          const Expanded(
+            flex: 3,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+              child: LPGlobeWidget(),
+            ),
           ),
         ],
       ),

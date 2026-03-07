@@ -58,8 +58,12 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  shaders:
+    - shaders/lp_globe.frag
+
   assets:
     - docs/atmosphere.mp4
+    - assets/lp_atlas_2k.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

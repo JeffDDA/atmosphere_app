@@ -59,4 +59,12 @@ class AtmosphereConstants {
   static const double classicMinimapTimeAxisHeight = 12.0;
   static const double classicMinimapLabelWidth = 0.0; // no labels on minimap
   static const double classicSelectionBoxMinWidth = 30.0;
+
+  // LP Globe (cylinder)
+  static const double globeDefaultZoom = 4.5;
+  static const double globeMinZoom = 2.0;
+  static const double globeMaxZoom = 8.0;
+  static const double globeRotationSensitivity = 0.006;
+  static const double globeSpinDurationMs = 800;
+  static const double globeFov = 50.0; // degrees — must match shader
 }
