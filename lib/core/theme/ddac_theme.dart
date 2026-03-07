@@ -17,6 +17,13 @@ class DDACTheme {
   static const Color rowLabelText = Color(0xFFCCCCCC);
   static const Color timeAxisText = Color(0xFF999999);
 
+  // CDS-faithful accent colors
+  static const Color cdsTextCyan = Color(0xFF00FFFF);
+  static const Color cdsTitleYellow = Color(0xFFFFFF00);
+  static const Color midnightLine = Color(0xFFFF0000);
+  static const Color skyGroupLabel = Color(0xFF4488FF);
+  static const Color groundGroupLabel = Color(0xFFFFAA00);
+
   // ── Cloud Cover / ECMWF Cloud ──
   // 0% = clear sky (deep indigo) → 100% = overcast (pale grey)
   static Color forCloudPercent(double pct) {
@@ -165,4 +172,7 @@ enum ClassicRow {
       this == ClassicRow.seeing ||
       this == ClassicRow.transparency ||
       this == ClassicRow.darkness;
+
+  /// Whether this row uses 3-hour blocks (ECMWF model data).
+  bool get isThreeHour => this == ClassicRow.ecmwfCloud;
 }

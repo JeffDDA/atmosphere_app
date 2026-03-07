@@ -26,8 +26,8 @@ class ClassicLayer1 extends ConsumerWidget {
           GestureDetector(
             onTap: () {},
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.fromLTRB(
+                  16, MediaQuery.of(context).viewPadding.top + 8, 16, 8),
               child: Row(
                 children: [
                   GestureDetector(

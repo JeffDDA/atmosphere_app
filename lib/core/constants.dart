@@ -42,19 +42,21 @@ class AtmosphereConstants {
   static const double gradientAnchorHeight = 32.0;
 
   // Classic Mode — chicklet grid
-  static const double classicChickletWidth = 40.0;
-  static const double classicChickletHeight = 24.0;
+  static const double classicChickletWidth = 17.0;
+  static const double classicChickletHeight = 17.0;
   static const double classicChickletGap = 1.0;
+  static const double classicChickletRadius = 2.0; // liquid glass corners
   static const double classicRowLabelWidth = 100.0;
-  static const double classicTimeAxisHeight = 36.0;
+  static const double classicTimeAxisHeight = 48.0;
+  static const double classicGroupLabelWidth = 14.0; // vertical Sky/Ground labels
   static const double classicGroupGap = 8.0; // sky/ground divider gap
   static const int classicSkyRowCount = 5; // rows above the gap
   static const int classicGroundRowCount = 4; // rows below the gap
   static const double classicVisibleHours = 8.0; // default visible window
 
   // Classic Mode — minimap
-  static const double classicMinimapHeight = 80.0;
-  static const double classicMinimapRowHeight = 6.0;
+  static const double classicMinimapHeight = 92.0;
+  static const double classicMinimapRowHeight = 5.0;
   static const double classicMinimapGroupGap = 3.0;
   static const double classicMinimapTimeAxisHeight = 12.0;
   static const double classicMinimapLabelWidth = 0.0; // no labels on minimap

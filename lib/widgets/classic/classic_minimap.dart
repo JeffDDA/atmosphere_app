@@ -106,6 +106,8 @@ class _MinimapPainter extends CustomPainter {
   final double nowX;
   final bool nowVisible;
 
+  static const String _fontFamily = 'Courier';
+
   _MinimapPainter({
     required this.allHours,
     required this.chickletWidth,
@@ -132,15 +134,65 @@ class _MinimapPainter extends CustomPainter {
         y += gap;
       }
 
-      for (var h = 0; h < allHours.length; h++) {
-        final x = h * chickletWidth;
-        final color = DDACTheme.chickletColor(row, allHours[h]);
-        canvas.drawRect(
-          Rect.fromLTWH(x, y, chickletWidth, rowH),
-          Paint()..color = color,
-        );
+      // Inset chicklets to create black gap lines between columns and rows
+      const insetX = 0.5;
+      const insetY = 0.5;
+      final drawH = rowH - insetY;
+
+      if (row.isThreeHour) {
+        // ECMWF row: 3-hour merged blocks with partial hour ticks
+        final tickPaint = Paint()
+          ..color = DDACTheme.chartBackground
+          ..strokeWidth = 0.5;
+        final tickLen = drawH * 0.3;
+
+        for (var h = 0; h < allHours.length; h += 3) {
+          final x = h * chickletWidth;
+          final blockEnd = (h + 3).clamp(0, allHours.length);
+          final blockHours = blockEnd - h;
+          final blockWidth = blockHours * chickletWidth;
+          final color = DDACTheme.chickletColor(row, allHours[h]);
+          canvas.drawRect(
+            Rect.fromLTWH(x + insetX, y, blockWidth - insetX * 2, drawH),
+            Paint()..color = color,
+          );
+
+          // Partial hour ticks at 1st and 2nd hour within block
+          for (var t = 1; t < blockHours; t++) {
+            final tickX = x + t * chickletWidth;
+            canvas.drawLine(Offset(tickX, y), Offset(tickX, y + tickLen), tickPaint);
+            canvas.drawLine(
+              Offset(tickX, y + drawH - tickLen),
+              Offset(tickX, y + drawH),
+              tickPaint,
+            );
+          }
+        }
+      } else {
+        for (var h = 0; h < allHours.length; h++) {
+          final x = h * chickletWidth;
+          final color = DDACTheme.chickletColor(row, allHours[h]);
+          canvas.drawRect(
+            Rect.fromLTWH(x + insetX, y, chickletWidth - insetX * 2, drawH),
+            Paint()..color = color,
+          );
+        }
       }
       y += rowH;
+    }
+
+    // Daytime hour labels overlaid on grid
+    _paintDaytimeHours(canvas, timeH, y);
+
+    // Midnight lines
+    final midnightPaint = Paint()
+      ..color = DDACTheme.midnightLine
+      ..strokeWidth = 0.5;
+    for (var h = 0; h < allHours.length; h++) {
+      if (allHours[h].time.hour == 0) {
+        final x = h * chickletWidth;
+        canvas.drawLine(Offset(x, timeH), Offset(x, y), midnightPaint);
+      }
     }
 
     // Now marker
@@ -164,14 +216,70 @@ class _MinimapPainter extends CustomPainter {
       Rect.fromLTWH(selectionBoxLeft, timeH, selectionBoxWidth, y - timeH),
       selPaint,
     );
+
+    // Attribution line
+    _paintAttribution(canvas, size, y + 2);
+  }
+
+  void _paintAttribution(Canvas canvas, Size size, double y) {
+    const copyrightStyle = TextStyle(
+      color: DDACTheme.rowLabelText,
+      fontSize: 8,
+      fontFamily: _fontFamily,
+    );
+    const nameStyle = TextStyle(
+      color: DDACTheme.cdsTitleYellow,
+      fontSize: 8,
+      fontFamily: _fontFamily,
+    );
+    const labelStyle = TextStyle(
+      color: DDACTheme.rowLabelText,
+      fontSize: 8,
+      fontFamily: _fontFamily,
+    );
+    const forecastStyle = TextStyle(
+      color: DDACTheme.cdsTitleYellow,
+      fontSize: 8,
+      fontFamily: _fontFamily,
+    );
+    const dataStyle = TextStyle(
+      color: DDACTheme.rowLabelText,
+      fontSize: 8,
+      fontFamily: _fontFamily,
+    );
+    const cmcStyle = TextStyle(
+      color: DDACTheme.cdsTextCyan,
+      fontSize: 8,
+      fontWeight: FontWeight.w700,
+      fontFamily: _fontFamily,
+    );
+
+    final tp = TextPainter(
+      text: const TextSpan(
+        children: [
+          TextSpan(text: '\u00A9 2026 ', style: copyrightStyle),
+          TextSpan(text: 'Attilla Danko', style: nameStyle),
+          TextSpan(text: '   forecast: ', style: labelStyle),
+          TextSpan(text: 'A. Rahill', style: forecastStyle),
+          TextSpan(text: '   data: ', style: dataStyle),
+          TextSpan(text: 'CMC', style: cmcStyle),
+          TextSpan(text: ' Environment Canada', style: dataStyle),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final dx = (size.width - tp.width) / 2;
+    tp.paint(canvas, Offset(dx, y));
   }
 
   void _paintTimeAxis(Canvas canvas, Size size, double timeH) {
     if (allHours.isEmpty) return;
 
     final textStyle = TextStyle(
-      color: DDACTheme.timeAxisText,
+      color: DDACTheme.cdsTextCyan,
       fontSize: 7,
+      fontFamily: _fontFamily,
     );
 
     String? lastDay;
@@ -201,6 +309,29 @@ class _MinimapPainter extends CustomPainter {
           tp.paint(canvas, Offset(x + 1, timeH - tp.height - 1));
         }
       }
+    }
+  }
+
+  void _paintDaytimeHours(Canvas canvas, double gridTop, double gridBottom) {
+    final textStyle = TextStyle(
+      color: DDACTheme.chartBackground.withAlpha(180),
+      fontSize: 7,
+      fontWeight: FontWeight.w700,
+      fontFamily: _fontFamily,
+    );
+    final centerY = (gridTop + gridBottom) / 2;
+
+    for (var h = 0; h < allHours.length; h++) {
+      final hour = allHours[h].time.hour;
+      if (!DDACTheme.isDaytime(allHours[h].time)) continue;
+      if (hour % 2 != 0) continue; // every 2nd hour to avoid crowding
+
+      final x = h * chickletWidth;
+      final tp = TextPainter(
+        text: TextSpan(text: '$hour', style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(x + (chickletWidth - tp.width) / 2, centerY - tp.height / 2));
     }
   }
 
