@@ -39,16 +39,41 @@ class LocationNotifier extends AsyncNotifier<List<ObservatoryLocation>> {
     state = AsyncData(locations);
   }
 
-  Future<void> addLocation(ObservatoryLocation location) async {
+  /// Returns true if added, false if duplicate coordinates exist.
+  Future<bool> addLocation(ObservatoryLocation location) async {
     final current = state.valueOrNull ?? [];
+    if (_hasDuplicateCoords(current, location)) return false;
     await _save([...current, location]);
+    return true;
   }
 
-  Future<void> updateLocation(int index, ObservatoryLocation location) async {
+  static bool _hasDuplicateCoords(
+    List<ObservatoryLocation> existing,
+    ObservatoryLocation candidate, [
+    int? skipIndex,
+  ]) {
+    for (int i = 0; i < existing.length; i++) {
+      if (i == skipIndex) continue;
+      final loc = existing[i];
+      // Compare rounded to 4 decimal places (~11m precision)
+      if (_round4(loc.latitude) == _round4(candidate.latitude) &&
+          _round4(loc.longitude) == _round4(candidate.longitude)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static double _round4(double v) => (v * 10000).roundToDouble() / 10000;
+
+  /// Returns true if updated, false if duplicate coordinates exist.
+  Future<bool> updateLocation(int index, ObservatoryLocation location) async {
     final current = List<ObservatoryLocation>.from(state.valueOrNull ?? []);
-    if (index < 0 || index >= current.length) return;
+    if (index < 0 || index >= current.length) return false;
+    if (_hasDuplicateCoords(current, location, index)) return false;
     current[index] = location;
     await _save(current);
+    return true;
   }
 
   Future<void> deleteLocation(int index) async {

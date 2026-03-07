@@ -154,12 +154,24 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
       sqmValue: sqm,
     );
 
+    bool saved;
     if (_isEditing) {
-      await ref
+      saved = await ref
           .read(locationProvider.notifier)
           .updateLocation(widget.editIndex!, location);
     } else {
-      await ref.read(locationProvider.notifier).addLocation(location);
+      saved = await ref.read(locationProvider.notifier).addLocation(location);
+    }
+
+    if (!saved) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A location with these coordinates already exists'),
+          ),
+        );
+      }
+      return;
     }
 
     if (mounted) Navigator.of(context).pop();
