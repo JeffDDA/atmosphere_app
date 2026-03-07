@@ -5,7 +5,6 @@ import '../../core/constants.dart';
 import '../../core/theme/ddac_theme.dart';
 import '../../models/forecast.dart';
 import '../../providers/classic_canvas_provider.dart';
-import '../../providers/classic_lens_provider.dart';
 
 class ClassicMinimap extends ConsumerWidget {
   const ClassicMinimap({super.key});
@@ -15,7 +14,6 @@ class ClassicMinimap extends ConsumerWidget {
     final allHours = ref.watch(classicAllHoursProvider);
     final canvasState = ref.watch(classicCanvasProvider);
     final nowInfo = ref.watch(classicNowMarkerProvider);
-    final lensState = ref.watch(classicLensProvider);
 
     if (allHours.isEmpty) return const SizedBox.shrink();
 
@@ -49,34 +47,14 @@ class ClassicMinimap extends ConsumerWidget {
             ? (nowInfo.fractionalIndex / (hourCount - 1)) * chartWidth
             : 0.0;
 
-        // Lens center marker on minimap (when lens is active)
-        final double? lensCenterX;
-        if (lensState.isActive && lensState.focalHourIndex != null) {
-          lensCenterX = hourCount > 1
-              ? (lensState.focalHourIndex! / (hourCount - 1)) * chartWidth
-              : 0.0;
-        } else {
-          lensCenterX = null;
-        }
-
         return GestureDetector(
           onTapDown: (details) {
-            if (lensState.isFullyOpen) {
-              _handleLensReposition(details.localPosition.dx, chartWidth,
-                  hourCount, pxPerHour, ref);
-            } else {
-              _handleTap(details.localPosition.dx, chartWidth, hourCount,
-                  gridViewportWidth, totalContentWidth, ref);
-            }
+            _handleTap(details.localPosition.dx, chartWidth, hourCount,
+                gridViewportWidth, totalContentWidth, ref);
           },
           onHorizontalDragUpdate: (details) {
-            if (lensState.isFullyOpen) {
-              _handleLensReposition(details.localPosition.dx, chartWidth,
-                  hourCount, pxPerHour, ref);
-            } else {
-              _handleDrag(details.localPosition.dx, chartWidth, selBoxWidth,
-                  gridViewportWidth, totalContentWidth, ref);
-            }
+            _handleDrag(details.localPosition.dx, chartWidth, selBoxWidth,
+                gridViewportWidth, totalContentWidth, ref);
           },
           child: Container(
             height: AtmosphereConstants.classicMinimapHeight,
@@ -90,7 +68,6 @@ class ClassicMinimap extends ConsumerWidget {
                 selectionBoxWidth: selBoxWidth,
                 nowX: nowX,
                 nowVisible: nowInfo.isWithinTimeline,
-                lensCenterX: lensCenterX,
               ),
             ),
           ),
@@ -119,30 +96,6 @@ class ClassicMinimap extends ConsumerWidget {
     if (maxScroll <= 0) return;
     ref.read(classicCanvasProvider.notifier).jumpTo(fraction * maxScroll);
   }
-
-  /// When lens is active, tapping/dragging the minimap repositions the lens center.
-  void _handleLensReposition(double tapX, double chartWidth, int hourCount,
-      double pxPerHour, WidgetRef ref) {
-    final tapFraction = (tapX / chartWidth).clamp(0.0, 1.0);
-    final targetHour = (tapFraction * hourCount).floor().clamp(0, hourCount - 1);
-    final gridX = targetHour * pxPerHour + pxPerHour / 2;
-
-    // Keep the same Y position
-    final currentState = ref.read(classicLensProvider);
-    ref.read(classicLensProvider.notifier).moveLensCenter(gridX, currentState.centerGridY);
-
-    // Update focal indices — keep same row, update hour
-    final currentRow = currentState.focalRowIndex ?? 0;
-    ref.read(classicLensProvider.notifier).updateFocalIndices(targetHour, currentRow);
-
-    // Also scroll the grid to keep the lens center visible
-    final labelW = AtmosphereConstants.classicRowLabelWidth;
-    final canvasNotifier = ref.read(classicCanvasProvider.notifier);
-    final maxOffset = canvasNotifier.maxOffset;
-    final viewportWidth = chartWidth - labelW;
-    final targetOffset = (gridX - viewportWidth / 2).clamp(0.0, maxOffset);
-    canvasNotifier.jumpTo(targetOffset);
-  }
 }
 
 class _MinimapPainter extends CustomPainter {
@@ -152,7 +105,6 @@ class _MinimapPainter extends CustomPainter {
   final double selectionBoxWidth;
   final double nowX;
   final bool nowVisible;
-  final double? lensCenterX;
 
   _MinimapPainter({
     required this.allHours,
@@ -161,7 +113,6 @@ class _MinimapPainter extends CustomPainter {
     required this.selectionBoxWidth,
     required this.nowX,
     required this.nowVisible,
-    this.lensCenterX,
   });
 
   @override
@@ -202,27 +153,6 @@ class _MinimapPainter extends CustomPainter {
         Offset(nowX, y),
         nowPaint,
       );
-    }
-
-    // Lens center marker
-    if (lensCenterX != null) {
-      final lensPaint = Paint()
-        ..color = const Color(0xFFFFFF00)
-        ..strokeWidth = 1.5;
-      canvas.drawLine(
-        Offset(lensCenterX!, timeH),
-        Offset(lensCenterX!, y),
-        lensPaint,
-      );
-      // Small diamond at center
-      final midY = (timeH + y) / 2;
-      final path = Path()
-        ..moveTo(lensCenterX!, midY - 4)
-        ..lineTo(lensCenterX! + 3, midY)
-        ..lineTo(lensCenterX!, midY + 4)
-        ..lineTo(lensCenterX! - 3, midY)
-        ..close();
-      canvas.drawPath(path, Paint()..color = const Color(0xFFFFFF00));
     }
 
     // Selection box
@@ -279,7 +209,6 @@ class _MinimapPainter extends CustomPainter {
     return old.selectionBoxLeft != selectionBoxLeft ||
         old.selectionBoxWidth != selectionBoxWidth ||
         old.nowX != nowX ||
-        old.allHours != allHours ||
-        old.lensCenterX != lensCenterX;
+        old.allHours != allHours;
   }
 }

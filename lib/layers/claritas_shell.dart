@@ -7,7 +7,7 @@ import '../providers/navigation_provider.dart';
 import '../widgets/condition_flags.dart';
 import '../widgets/depth_indicator.dart';
 import 'claritas_transition.dart';
-import 'layer1/layer1_card.dart';
+import 'layer1/classic_layer1.dart';
 import 'layer2/layer2_view.dart';
 import 'layer3/layer3_view.dart';
 
@@ -196,7 +196,7 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
       case LayerId.home:
         return const SizedBox.shrink();
       case LayerId.layer1:
-        return const Layer1Card();
+        return const ClassicLayer1();
       case LayerId.layer2:
         return const Layer2View();
       case LayerId.layer3:
