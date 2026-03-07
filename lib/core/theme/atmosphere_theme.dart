@@ -5,13 +5,21 @@ import 'atmosphere_colors.dart';
 class AtmosphereTheme {
   AtmosphereTheme._();
 
+  static const Color dragonBurgundy = Color(0xFF731b1d);
+
   static ThemeData get dark => ThemeData(
+    useMaterial3: true,
     brightness: Brightness.dark,
-    scaffoldBackgroundColor: AtmosphereColors.surfaceDark,
-    colorScheme: const ColorScheme.dark(
-      surface: AtmosphereColors.surfaceDark,
-      primary: AtmosphereColors.mediumBlue,
-      secondary: AtmosphereColors.blueGrey,
+    scaffoldBackgroundColor: const Color(0xFF121212),
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: dragonBurgundy,
+      brightness: Brightness.dark,
+      surface: const Color(0xFF121212),
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: dragonBurgundy,
+      foregroundColor: Colors.white,
+      elevation: 2,
     ),
     cardColor: AtmosphereColors.cardDark,
     textTheme: const TextTheme(
@@ -41,12 +49,18 @@ class AtmosphereTheme {
   );
 
   static ThemeData get light => ThemeData(
+    useMaterial3: true,
     brightness: Brightness.light,
     scaffoldBackgroundColor: AtmosphereColors.surfaceLight,
-    colorScheme: const ColorScheme.light(
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: dragonBurgundy,
+      brightness: Brightness.light,
       surface: AtmosphereColors.surfaceLight,
-      primary: AtmosphereColors.mediumBlue,
-      secondary: AtmosphereColors.blueGrey,
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: dragonBurgundy,
+      foregroundColor: Colors.white,
+      elevation: 2,
     ),
     cardColor: AtmosphereColors.cardLight,
     textTheme: const TextTheme(
