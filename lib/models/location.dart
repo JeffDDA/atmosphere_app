@@ -1,4 +1,4 @@
-enum LocationSourceType { manual, gps, bortle }
+enum LocationSourceType { manual, gps, bortle, map }
 
 class ObservatoryLocation {
   final String name;
@@ -32,5 +32,49 @@ class ObservatoryLocation {
     if (sqmValue >= 19.0) return 4.6;
     if (sqmValue >= 18.5) return 4.0;
     return 3.5;
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'latitude': latitude,
+        'longitude': longitude,
+        'elevationM': elevationM,
+        'sourceType': sourceType.name,
+        'bortleClass': bortleClass,
+        'sqmValue': sqmValue,
+      };
+
+  factory ObservatoryLocation.fromJson(Map<String, dynamic> json) {
+    return ObservatoryLocation(
+      name: json['name'] as String,
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+      elevationM: (json['elevationM'] as num?)?.toDouble() ?? 0,
+      sourceType: LocationSourceType.values.byName(
+        json['sourceType'] as String? ?? 'manual',
+      ),
+      bortleClass: json['bortleClass'] as int? ?? 4,
+      sqmValue: (json['sqmValue'] as num?)?.toDouble() ?? 20.5,
+    );
+  }
+
+  ObservatoryLocation copyWith({
+    String? name,
+    double? latitude,
+    double? longitude,
+    double? elevationM,
+    LocationSourceType? sourceType,
+    int? bortleClass,
+    double? sqmValue,
+  }) {
+    return ObservatoryLocation(
+      name: name ?? this.name,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      elevationM: elevationM ?? this.elevationM,
+      sourceType: sourceType ?? this.sourceType,
+      bortleClass: bortleClass ?? this.bortleClass,
+      sqmValue: sqmValue ?? this.sqmValue,
+    );
   }
 }

@@ -51,6 +51,24 @@ class AtmosphereColors {
     return darknessYellow;
   }
 
+  // Bortle class colors (Lorenz / CDS vocabulary)
+  static const bortleColors = <Color>[
+    Color(0xFF000000), // 1 — true dark
+    Color(0xFF05031A), // 2
+    Color(0xFF0A062D), // 3 — rural
+    Color(0xFF00234B), // 4
+    Color(0xFF00465F), // 5 — suburban
+    Color(0xFF1E5F1E), // 6
+    Color(0xFFAA8700), // 7
+    Color(0xFFD24100), // 8 — city
+    Color(0xFFFF1405), // 9 — inner city
+  ];
+
+  static Color forBortle(int bortleClass) {
+    final idx = (bortleClass - 1).clamp(0, bortleColors.length - 1);
+    return bortleColors[idx];
+  }
+
   static Color forCondition(ConditionState condition) {
     switch (condition) {
       case ConditionState.exceptional:

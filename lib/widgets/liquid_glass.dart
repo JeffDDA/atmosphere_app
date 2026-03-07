@@ -7,6 +7,7 @@ class LiquidGlass extends StatelessWidget {
   final double borderRadius;
   final double tintOpacity;
   final EdgeInsets padding;
+  final Color? accentColor;
   final Widget child;
 
   const LiquidGlass({
@@ -15,6 +16,7 @@ class LiquidGlass extends StatelessWidget {
     this.borderRadius = 16.0,
     this.tintOpacity = 0.08,
     this.padding = const EdgeInsets.all(16),
+    this.accentColor,
     required this.child,
   });
 
@@ -29,10 +31,17 @@ class LiquidGlass extends StatelessWidget {
             color: Colors.white.withValues(alpha: tintOpacity),
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 1,
+              color: accentColor?.withValues(alpha: 0.6) ??
+                  Colors.white.withValues(alpha: 0.15),
+              width: accentColor != null ? 1.5 : 1,
             ),
             boxShadow: [
+              if (accentColor != null)
+                BoxShadow(
+                  color: accentColor!.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.25),
                 blurRadius: 10,

@@ -33,7 +33,10 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.6.1
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
   google_fonts: ^6.1.0
+  location_picker_flutter_map: ^4.1.0
   shared_preferences: ^2.3.4
   video_player: ^2.9.2
 

@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import '../models/condition_state.dart';
 import '../models/forecast.dart';
+import '../models/location.dart';
 
 // Pietown NM — exceptional tonight
 final pietownTonight = NightForecast(
@@ -315,4 +318,131 @@ List<HourlyForecast> _generateCharlotteHours(DateTime date) {
       condition: ConditionState.overcast,
     ),
   ];
+}
+
+// ── Mock forecast generator for user-added locations ─────────────────────────
+
+/// Generate 3 nights of plausible mock data biased by Bortle class.
+List<NightForecast> generateMockForecast(ObservatoryLocation location) {
+  final rng = Random(location.name.hashCode);
+  final bortle = location.bortleClass;
+
+  // Bias: lower Bortle = better conditions
+  final qualityBias = (10 - bortle) / 9.0; // 1.0 for Bortle 1, 0.11 for Bortle 9
+
+  final headlines = [
+    [
+      'Solid night ahead. Good transparency, steady seeing.',
+      'Clear skies expected. Get your gear ready.',
+      'Extraordinary clarity tonight. Every photon is yours.',
+    ],
+    [
+      'Conditions may open up later. Stay alert.',
+      'Mixed conditions — shoot your priority targets first.',
+      'Partly cloudy with improving windows.',
+    ],
+    [
+      'Conditions softening. Clouds moving in overnight.',
+      'Marginal night. Brief clearings possible.',
+      'Overcast tonight. Rest your gear.',
+    ],
+  ];
+
+  final nights = <NightForecast>[];
+  for (int night = 0; night < 3; night++) {
+    final nightQuality = qualityBias - night * 0.1 + rng.nextDouble() * 0.2;
+    final hours = _generateMockHours(
+      DateTime.now().add(Duration(days: night)),
+      nightQuality.clamp(0.0, 1.0),
+      bortle,
+      rng,
+    );
+
+    final condition = _conditionForQuality(nightQuality);
+    final headlineSet = nightQuality > 0.6
+        ? headlines[0]
+        : nightQuality > 0.3
+            ? headlines[1]
+            : headlines[2];
+    final headline = headlineSet[rng.nextInt(headlineSet.length)];
+
+    nights.add(NightForecast(
+      date: DateTime.now().add(Duration(days: night)),
+      overallCondition: condition,
+      headline: headline,
+      hours: hours,
+    ));
+  }
+
+  return nights;
+}
+
+ConditionState _conditionForQuality(double q) {
+  if (q > 0.85) return ConditionState.exceptional;
+  if (q > 0.7) return ConditionState.excellent;
+  if (q > 0.55) return ConditionState.good;
+  if (q > 0.4) return ConditionState.marginalImproving;
+  if (q > 0.25) return ConditionState.marginalDegrading;
+  if (q > 0.1) return ConditionState.poorGap;
+  return ConditionState.overcast;
+}
+
+List<HourlyForecast> _generateMockHours(
+  DateTime date,
+  double quality,
+  int bortle,
+  Random rng,
+) {
+  final ct = DateTime(date.year, date.month, date.day, 19);
+  final hours = <HourlyForecast>[];
+
+  for (int h = 0; h < 10; h++) {
+    // Quality improves mid-night, degrades at edges
+    final hourFactor = 1.0 - (h - 4.5).abs() / 5.0;
+    final q = (quality + hourFactor * 0.2).clamp(0.0, 1.0);
+
+    final cloud = ((1.0 - q) * 80 + rng.nextInt(15)).clamp(0, 100).toDouble();
+    final seeing = (q * 4 + 1 + rng.nextDouble()).clamp(1, 5).round();
+    final trans = (q * 4 + 1 + rng.nextDouble()).clamp(1, 5).round();
+    final wind = ((1.0 - q) * 10 + rng.nextInt(5)).toDouble();
+    final gust = rng.nextDouble() > 0.6 ? wind + rng.nextInt(8) : 0.0;
+    final temp = (15.0 - h * 1.5 + rng.nextInt(4) - 2);
+    final dewSpread = (q * 12 + 2 + rng.nextInt(3)).clamp(1, 20).toDouble();
+    final dewPoint = temp - dewSpread;
+
+    // NELM ceiling from Bortle class
+    final darkCeiling =
+        [7.6, 7.3, 7.0, 6.7, 6.3, 5.8, 5.2, 4.6, 4.0][(bortle - 1).clamp(0, 8)];
+    // Actual NELM degrades from ceiling by cloud/seeing
+    final actualNelm = (darkCeiling * q + rng.nextDouble() * 0.3)
+        .clamp(2.0, darkCeiling);
+
+    final moonAlt = 40.0 - h * 8.0 + rng.nextInt(10) - 5;
+    final moonIllum = rng.nextInt(80).toDouble();
+
+    hours.add(HourlyForecast(
+      time: ct.add(Duration(hours: h)),
+      cloudCoverPercent: cloud,
+      ecmwfCloudPercent: (cloud + rng.nextInt(10) - 5).clamp(0, 100),
+      seeing: seeing,
+      transparency: trans,
+      windMph: wind,
+      gustMph: gust,
+      windDirectionDeg: (rng.nextInt(360)).toDouble(),
+      dewSpreadC: dewSpread,
+      temperatureC: temp,
+      dewPointC: dewPoint,
+      moonIlluminationPercent: moonIllum,
+      moonAltitudeDeg: moonAlt,
+      moonAzimuthDeg: (rng.nextInt(360)).toDouble(),
+      gltHeatFlux: ((1.0 - q) * 150 - 20 + rng.nextInt(30)).toDouble(),
+      bltCeilingM: ((1.0 - q) * 1500 + 150 + rng.nextInt(200)).toDouble(),
+      jsWindSpeedKt: (20 + rng.nextInt(40)).toDouble(),
+      limitingMagnitude: actualNelm,
+      darknessCeiling: darkCeiling,
+      condition: _conditionForQuality(q),
+    ));
+  }
+
+  return hours;
 }

@@ -6,21 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
+import '../../core/theme/atmosphere_colors.dart';
 import '../../models/location.dart';
 import '../../providers/location_provider.dart';
-
-// ── Bortle colors (matches CDS vocabulary) ─────────────────────────────────────
-const _bortleColors = <Color>[
-  Color(0xFF000000), // 1 — true dark
-  Color(0xFF05031A), // 2
-  Color(0xFF0A062D), // 3 — rural
-  Color(0xFF00234B), // 4
-  Color(0xFF00465F), // 5 — suburban
-  Color(0xFF1E5F1E), // 6
-  Color(0xFFAA8700), // 7
-  Color(0xFFD24100), // 8 — city
-  Color(0xFFFF1405), // 9 — inner city
-];
 
 const _crimson = Color(0xFF8B0000);
 const _cylHalfHeight = 1.22; // must match CYL_H in shader
@@ -177,7 +165,8 @@ class _LPGlobeWidgetState extends ConsumerState<LPGlobeWidget>
       _lastLocation = location;
     }
 
-    final locations = ref.watch(locationProvider);
+    final locationsAsync = ref.watch(locationProvider);
+    final locations = locationsAsync.valueOrNull ?? [];
 
     return GestureDetector(
       onTap: () {},
@@ -328,8 +317,8 @@ class _LPCylinderPainter extends CustomPainter {
         );
       } else {
         final bortleIdx =
-            (loc.bortleClass - 1).clamp(0, _bortleColors.length - 1);
-        canvas.drawCircle(center, 3, Paint()..color = _bortleColors[bortleIdx]);
+            (loc.bortleClass - 1).clamp(0, AtmosphereColors.bortleColors.length - 1);
+        canvas.drawCircle(center, 3, Paint()..color = AtmosphereColors.bortleColors[bortleIdx]);
         if (loc.bortleClass <= 2) {
           canvas.drawCircle(
             center,
@@ -368,14 +357,14 @@ class _BortleLegend extends StatelessWidget {
             style: TextStyle(fontSize: 8, color: Color(0x4CF0EEE8)),
           ),
           const SizedBox(width: 4),
-          ..._bortleColors.map(
+          ...AtmosphereColors.bortleColors.map(
             (c) => Expanded(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 0.5),
                 decoration: BoxDecoration(
                   color: c,
                   borderRadius: BorderRadius.circular(2),
-                  border: c == _bortleColors[0]
+                  border: c == AtmosphereColors.bortleColors[0]
                       ? Border.all(
                           color: const Color(0x26FFFFFF),
                           width: 0.5,

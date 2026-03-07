@@ -20,7 +20,8 @@ class NightBoundary {
 final forecastProvider = Provider<List<NightForecast>>((ref) {
   final activeLocation = ref.watch(activeLocationProvider);
   if (activeLocation == null) return [];
-  return mockForecasts[activeLocation.name] ?? [];
+  return mockForecasts[activeLocation.name] ??
+      generateMockForecast(activeLocation);
 });
 
 final tonightForecastProvider = Provider<NightForecast?>((ref) {
