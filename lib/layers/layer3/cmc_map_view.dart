@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -40,7 +41,22 @@ class _CmcMapViewState extends ConsumerState<CmcMapView> {
   // Animation state
   static const int _hourStep = 3;
   static const int _maxHour = 48;
-  static const Duration _frameInterval = Duration(milliseconds: 700); // ~1.4 fps
+  static const List<Duration> _speeds = [
+    Duration(milliseconds: 1500),
+    Duration(milliseconds: 1000),
+    Duration(milliseconds: 700),
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 200),
+  ];
+  static const List<String> _speedLabels = [
+    '0.5x',
+    '0.7x',
+    '1x',
+    '1.8x',
+    '3.5x',
+  ];
+  int _speedIndex = 2;
+  Duration get _frameInterval => _speeds[_speedIndex];
   Timer? _animTimer;
   bool _isPlaying = false;
   int _currentHour = 0;
@@ -245,6 +261,16 @@ class _CmcMapViewState extends ConsumerState<CmcMapView> {
     ref.read(cmcMapHourProvider.notifier).state = hour;
   }
 
+  void _onSpeedChanged(double value) {
+    final newIndex = value.round();
+    if (newIndex == _speedIndex) return;
+    setState(() => _speedIndex = newIndex);
+    if (_isPlaying) {
+      _animTimer?.cancel();
+      _animTimer = Timer.periodic(_frameInterval, (_) => _advanceFrame());
+    }
+  }
+
   void _jumpHour(int delta) {
     _stopPlaying();
     final sequence = _hourSequence;
@@ -285,7 +311,9 @@ class _CmcMapViewState extends ConsumerState<CmcMapView> {
             const SizedBox(height: 8),
             // Timeline progress bar
             _buildTimeline(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
+            _buildSpeedSlider(),
+            const SizedBox(height: 4),
             // Hour label pill
             _buildHourLabel(typeLabel, forecastHour),
             const SizedBox(height: 16),
@@ -428,6 +456,42 @@ class _CmcMapViewState extends ConsumerState<CmcMapView> {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeedSlider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          Icon(
+            Icons.speed,
+            color: Colors.white.withValues(alpha: 0.4),
+            size: 16,
+          ),
+          Expanded(
+            child: CupertinoSlider(
+              value: _speedIndex.toDouble(),
+              min: 0,
+              max: (_speeds.length - 1).toDouble(),
+              divisions: _speeds.length - 1,
+              activeColor: const Color(0xFF4FC3F7),
+              onChanged: _onSpeedChanged,
+            ),
+          ),
+          SizedBox(
+            width: 32,
+            child: Text(
+              _speedLabels[_speedIndex],
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
