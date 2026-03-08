@@ -8,6 +8,7 @@ import '../../providers/layer3_entry_provider.dart';
 import '../../providers/location_provider.dart';
 import '../layer2/gradient_anchor.dart';
 import 'cmc_map_view.dart';
+import 'goes_map_view.dart';
 import 'seeing_column_card.dart';
 
 class Layer3View extends ConsumerWidget {
@@ -76,6 +77,8 @@ class Layer3View extends ConsumerWidget {
         return CmcMapView(type: CmcMapType.seeing, hours: hours);
       case 'transparency':
         return CmcMapView(type: CmcMapType.transparency, hours: hours);
+      case 'satellite':
+        return GoesMapView(hours: hours);
       case 'darkness':
         return Center(
           child: Text(

@@ -10,6 +10,7 @@ import '../../providers/layer3_entry_provider.dart';
 import '../../providers/location_provider.dart';
 import 'cards/aurora_card.dart';
 import 'cards/cloud_cover_card.dart';
+import 'cards/satellite_card.dart';
 import 'cards/darkness_card.dart';
 import 'cards/dew_point_card.dart';
 import 'cards/imaging_window_card.dart';
@@ -146,6 +147,11 @@ class Layer2View extends ConsumerWidget {
         hours: hours,
         nightBoundaryIndices: nightBoundaryIndices,
       ),
+      ref,
+    ));
+    cards.add(_domainCard(
+      'satellite',
+      SatelliteCard(longitude: location?.longitude ?? -98.0),
       ref,
     ));
     cards.add(_domainCard(
