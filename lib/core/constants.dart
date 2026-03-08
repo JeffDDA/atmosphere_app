@@ -74,4 +74,9 @@ class AtmosphereConstants {
   // LP Map (full-screen)
   static const double lpMapMinZoom = 1.2;
   static const double lpMapMaxZoom = 8.0;
+
+  // CMC Forecast Maps
+  static const int cmcMapWidth = 719;
+  static const int cmcMapHeight = 600;
+  static const double cmcSwipeVelocityThreshold = 200.0;
 }

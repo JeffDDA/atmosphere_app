@@ -37,6 +37,7 @@ dependencies:
   geocoding: ^4.0.0
   google_fonts: ^6.1.0
   location_picker_flutter_map: ^4.1.0
+  http: ^1.2.1
   shared_preferences: ^2.3.4
   video_player: ^2.9.2
 

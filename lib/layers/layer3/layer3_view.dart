@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/cmc_projections.dart';
 import '../../models/forecast.dart';
 import '../../providers/forecast_provider.dart';
 import '../../providers/layer3_entry_provider.dart';
 import '../../providers/location_provider.dart';
 import '../layer2/gradient_anchor.dart';
+import 'cmc_map_view.dart';
 import 'seeing_column_card.dart';
 
 class Layer3View extends ConsumerWidget {
@@ -68,12 +70,12 @@ class Layer3View extends ConsumerWidget {
     double elevationM,
   ) {
     switch (domain) {
+      case 'cloud_cover':
+        return CmcMapView(type: CmcMapType.cloud, hours: hours);
       case 'seeing':
-        return SeeingColumnCard(
-          hours: hours,
-          observatoryElevationM: elevationM,
-          nightBoundaryIndices: nightBoundaryIndices,
-        );
+        return CmcMapView(type: CmcMapType.seeing, hours: hours);
+      case 'transparency':
+        return CmcMapView(type: CmcMapType.transparency, hours: hours);
       case 'darkness':
         return Center(
           child: Text(
@@ -81,9 +83,8 @@ class Layer3View extends ConsumerWidget {
             style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
           ),
         );
-      // Future: 'cloud_cover', 'transparency', 'wind', 'imaging_window'
+      // Future: 'wind', 'imaging_window'
       default:
-        // Default to seeing until other detail cards are built
         return SeeingColumnCard(
           hours: hours,
           observatoryElevationM: elevationM,
