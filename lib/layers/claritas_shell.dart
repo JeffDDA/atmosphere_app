@@ -222,7 +222,8 @@ class _ClaritasShellState extends ConsumerState<ClaritasShell>
       case LayerId.layer1:
         return const ClassicLayer1();
       case LayerId.layer2:
-        final mode = ref.watch(layer2ModeProvider);
+        final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+        final mode = isLandscape ? null : ref.watch(layer2ModeProvider);
         if (mode == 'lp_map') {
           return const LPMapView();
         }

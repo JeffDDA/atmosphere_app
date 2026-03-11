@@ -16,6 +16,8 @@ class ClassicLayer1 extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final location = ref.watch(activeLocationProvider);
     final locationName = location?.name ?? 'Unknown';
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Container(
       color: DDACTheme.chartBackground,
@@ -69,15 +71,16 @@ class ClassicLayer1 extends ConsumerWidget {
             color: DDACTheme.divider,
           ),
           // Grid
-          const Expanded(
-            flex: 2,
-            child: ClassicGrid(),
+          Expanded(
+            flex: isLandscape ? 1 : 2,
+            child: const ClassicGrid(),
           ),
-          // LP Cylinder
-          const Expanded(
-            flex: 3,
-            child: LPGlobeWidget(),
-          ),
+          // LP Globe — hidden in landscape to maximise grid space
+          if (!isLandscape)
+            const Expanded(
+              flex: 3,
+              child: LPGlobeWidget(),
+            ),
         ],
       ),
     );
