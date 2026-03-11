@@ -5,9 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../core/theme/atmosphere_colors.dart';
 import '../core/theme/atmosphere_theme.dart';
-import '../data/mock_forecasts.dart';
 import '../layers/claritas_shell.dart';
+import '../models/condition_state.dart';
 import '../models/layer_id.dart';
+import '../providers/forecast_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/navigation_provider.dart';
 import '../widgets/liquid_glass.dart';
@@ -128,12 +129,16 @@ class _LocationGrid extends ConsumerWidget {
         }
 
         final location = locations[index];
-        final forecasts = mockForecasts[location.name] ??
-            generateMockForecast(location);
-        final tonightCondition = forecasts.first.overallCondition;
+        final tonightAsync = ref.watch(
+          locationTonightProvider((location.latitude, location.longitude)),
+        );
+        final tonight = tonightAsync.valueOrNull;
+        final tonightCondition =
+            tonight?.overallCondition ?? ConditionState.good;
         final conditionColor =
             AtmosphereColors.forCondition(tonightCondition);
-        final headline = forecasts.first.headline;
+        final headline =
+            tonight?.headline ?? 'Loading forecast\u2026';
 
         return GestureDetector(
           onTap: () {

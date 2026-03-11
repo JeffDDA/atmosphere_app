@@ -62,7 +62,8 @@ class DarknessCard extends ConsumerWidget {
       6 => 'Bortle 6 \u2014 bright suburban',
       7 => 'Bortle 7 \u2014 suburban/urban transition',
       8 => 'Bortle 8 \u2014 city sky',
-      _ => 'Bortle 9 \u2014 inner-city sky',
+      9 => 'Bortle 9 \u2014 inner-city sky',
+      _ => 'Light pollution data unavailable',
     };
 
     // Moon impact summary

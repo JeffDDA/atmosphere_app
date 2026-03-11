@@ -150,7 +150,38 @@ class _GridPainter extends CustomPainter {
 
       final row = rows[r];
 
-      if (row.isThreeHour) {
+      if (row == ClassicRow.darkness) {
+        // Darkness row: 4 sub-cells per hour with interpolated limiting magnitude
+        const subCells = 4;
+        final subW = chickletWidth / subCells;
+
+        for (var h = firstVisibleHour; h < lastVisibleHour; h++) {
+          final hourScreenX = h * pxPerHour - offsetPx + labelWidth;
+          if (hourScreenX + chickletWidth < labelWidth ||
+              hourScreenX > viewportWidth) {
+            continue;
+          }
+
+          final mag0 = allHours[h].limitingMagnitude;
+          final mag1 = (h + 1 < allHours.length)
+              ? allHours[h + 1].limitingMagnitude
+              : mag0;
+
+          for (var s = 0; s < subCells; s++) {
+            final t = s / subCells;
+            final mag = mag0 + (mag1 - mag0) * t;
+            final color = DDACTheme.forDarkness(mag);
+            final sx = hourScreenX + s * subW;
+            if (sx + subW < labelWidth || sx > viewportWidth) continue;
+            final left = sx < labelWidth ? labelWidth : sx;
+            final right = (sx + subW).clamp(0.0, viewportWidth);
+            canvas.drawRect(
+              Rect.fromLTWH(left, y, right - left, chickletHeight),
+              Paint()..color = color,
+            );
+          }
+        }
+      } else if (row.isThreeHour) {
         // ECMWF row: 3-hour merged blocks with partial hour ticks
         final startH = (firstVisibleHour ~/ 3) * 3;
         final tickPaint = Paint()

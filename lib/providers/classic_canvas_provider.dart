@@ -4,16 +4,13 @@ import 'package:flutter/widgets.dart' show ClampingScrollSimulation;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants.dart';
-import '../data/mock_classic_hours.dart';
 import '../models/forecast.dart';
-import 'location_provider.dart';
+import 'forecast_provider.dart';
 
-/// Full 24h x 3-day timeline for Classic Mode (72 hours).
-/// Separate from allHoursProvider so Claritas nighttime-only data is untouched.
+/// Full 24h x 3-day timeline for Classic Mode (72+ hours).
+/// Uses live API data (all hours including daytime).
 final classicAllHoursProvider = Provider<List<HourlyForecast>>((ref) {
-  final location = ref.watch(activeLocationProvider);
-  if (location == null) return [];
-  return generateClassicHours(location.name);
+  return ref.watch(liveAllHoursProvider);
 });
 
 /// Now marker computed against the classic 24h timeline.

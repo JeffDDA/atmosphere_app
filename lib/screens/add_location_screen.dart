@@ -8,6 +8,7 @@ import 'package:location_picker_flutter_map/location_picker_flutter_map.dart';
 import '../core/coordinate_utils.dart';
 import '../models/location.dart';
 import '../providers/location_provider.dart';
+import '../services/dragon_cds_service.dart';
 
 class AddLocationScreen extends ConsumerStatefulWidget {
   /// If non-null, we're editing an existing location at this index.
@@ -21,7 +22,13 @@ class AddLocationScreen extends ConsumerStatefulWidget {
 }
 
 class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
-  int _tabIndex = 0; // 0=Manual, 1=Map, 2=GPS
+  int _tabIndex = 0; // 0=Search, 1=Manual, 2=Map, 3=GPS
+
+  // Search state
+  final _searchController = TextEditingController();
+  List<Observatory> _searchResults = [];
+  bool _searchLoading = false;
+  String? _searchError;
 
   // Shared fields
   final _nameController = TextEditingController();
@@ -52,6 +59,7 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
   void initState() {
     super.initState();
     if (widget.existingLocation != null) {
+      _tabIndex = 1; // Jump to Manual tab when editing
       _populateFrom(widget.existingLocation!);
     } else {
       _sqmController.text =
@@ -109,6 +117,7 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _nameController.dispose();
     _latController.dispose();
     _lonController.dispose();
@@ -138,9 +147,9 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
     final sqm = double.tryParse(_sqmController.text) ??
         CoordinateUtils.sqmForBortle(_bortleClass);
 
-    final sourceType = _tabIndex == 1
+    final sourceType = _tabIndex == 2
         ? LocationSourceType.map
-        : _tabIndex == 2
+        : _tabIndex == 3
             ? LocationSourceType.gps
             : LocationSourceType.manual;
 
@@ -282,15 +291,19 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
                 thumbColor: Colors.white.withValues(alpha: 0.15),
                 children: const {
                   0: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('Manual', style: TextStyle(fontSize: 13)),
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('Search', style: TextStyle(fontSize: 13)),
                   ),
                   1: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('Map', style: TextStyle(fontSize: 13)),
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('Manual', style: TextStyle(fontSize: 13)),
                   ),
                   2: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text('Map', style: TextStyle(fontSize: 13)),
+                  ),
+                  3: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
                     child: Text('GPS', style: TextStyle(fontSize: 13)),
                   ),
                 },
@@ -302,6 +315,7 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
               child: IndexedStack(
                 index: _tabIndex,
                 children: [
+                  _buildSearchTab(),
                   _buildManualTab(),
                   _buildMapTab(),
                   _buildGpsTab(),
@@ -311,6 +325,219 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // ── Search Tab ─────────────────────────────────────────────────────────────
+
+  Future<void> _performTextSearch(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() {
+      _searchLoading = true;
+      _searchError = null;
+    });
+
+    try {
+      final service = ref.read(dragonCDSServiceProvider);
+      final response = await service.searchObservatories(q: query.trim());
+      if (mounted) {
+        setState(() {
+          _searchResults = response.results;
+          _searchLoading = false;
+          if (response.results.isEmpty) {
+            _searchError = 'No observatories found';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searchLoading = false;
+          _searchError = 'Search failed: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _performSpatialSearch() async {
+    setState(() {
+      _searchLoading = true;
+      _searchError = null;
+    });
+
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _searchLoading = false;
+            _searchError = 'Location permission denied';
+          });
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _searchLoading = false;
+          _searchError = 'Location permission permanently denied';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+      final service = ref.read(dragonCDSServiceProvider);
+      final response = await service.searchObservatories(
+        lat: position.latitude,
+        lon: position.longitude,
+        radiusKm: 100,
+      );
+
+      if (mounted) {
+        setState(() {
+          _searchResults = response.results;
+          _searchLoading = false;
+          if (response.results.isEmpty) {
+            _searchError = 'No observatories found nearby';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searchLoading = false;
+          _searchError = 'Search failed: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _selectObservatory(Observatory obs) async {
+    final sqm = obs.bortleClass != null
+        ? CoordinateUtils.sqmForBortle(obs.bortleClass!)
+        : 20.5;
+
+    final location = ObservatoryLocation(
+      name: obs.name,
+      latitude: obs.latitude,
+      longitude: obs.longitude,
+      elevationM: obs.elevationM ?? 0,
+      sourceType: LocationSourceType.manual,
+      bortleClass: obs.bortleClass ?? 4,
+      sqmValue: sqm,
+    );
+
+    final saved =
+        await ref.read(locationProvider.notifier).addLocation(location);
+
+    if (!saved) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A location with these coordinates already exists'),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Widget _buildSearchTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: 'Search observatories\u2026',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                  onSubmitted: _performTextSearch,
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _performSpatialSearch,
+                icon: const Icon(Icons.my_location, size: 22),
+                tooltip: 'Near me',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_searchLoading)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: CircularProgressIndicator(),
+          )
+        else if (_searchError != null && _searchResults.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(32),
+            child: Text(
+              _searchError!,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              itemCount: _searchResults.length,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemBuilder: (context, index) {
+                final obs = _searchResults[index];
+                return _buildObservatoryTile(obs);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildObservatoryTile(Observatory obs) {
+    final subtitle = [
+      if (obs.stateProvince != null) obs.stateProvince,
+      if (obs.country != null) obs.country,
+      if (obs.distanceKm != null) '${obs.distanceKm!.toStringAsFixed(1)} km',
+    ].join(' \u00b7 ');
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      title: Text(
+        obs.name,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+      subtitle: subtitle.isNotEmpty
+          ? Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            )
+          : null,
+      trailing: const Icon(Icons.add_circle_outline, size: 20),
+      onTap: () => _selectObservatory(obs),
     );
   }
 
@@ -476,7 +703,7 @@ class _AddLocationScreenState extends ConsumerState<AddLocationScreen> {
           }
 
           // Switch to manual tab to let user fill in remaining fields
-          _tabIndex = 0;
+          _tabIndex = 1;
         });
       },
     );
