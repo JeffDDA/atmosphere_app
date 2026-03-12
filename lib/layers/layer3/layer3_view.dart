@@ -79,6 +79,12 @@ class Layer3View extends ConsumerWidget {
         return CmcMapView(type: CmcMapType.transparency, hours: hours);
       case 'satellite':
         return GoesMapView(hours: hours);
+      case 'wind':
+        return CmcMapView(type: CmcMapType.wind, hours: hours);
+      case 'humidity':
+        return CmcMapView(type: CmcMapType.humidity, hours: hours);
+      case 'temperature':
+        return CmcMapView(type: CmcMapType.temperature, hours: hours);
       case 'darkness':
         return Center(
           child: Text(

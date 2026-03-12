@@ -94,6 +94,15 @@ class CmcMapRun {
       case CmcMapType.transparency:
         filename =
             '${runId}_054_R1_north@america@astro_I_ASTRO_transp_$fh.png';
+      case CmcMapType.wind:
+        filename =
+            '${runId}_054_R1_north@america@astro_I_ASTRO_uv_$fh.png';
+      case CmcMapType.humidity:
+        filename =
+            '${runId}_054_R1_north@america@astro_I_ASTRO_hr_$fh.png';
+      case CmcMapType.temperature:
+        filename =
+            '${runId}_054_R1_north@america@astro_I_ASTRO_tt_$fh.png';
     }
 
     return 'https://weather.gc.ca/data/prog/regional/$runId/$filename';
@@ -108,6 +117,12 @@ class CmcMapRun {
         return 'Seeing';
       case CmcMapType.transparency:
         return 'Transparency';
+      case CmcMapType.wind:
+        return 'Wind';
+      case CmcMapType.humidity:
+        return 'Humidity';
+      case CmcMapType.temperature:
+        return 'Temperature';
     }
   }
 }

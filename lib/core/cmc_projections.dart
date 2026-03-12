@@ -56,6 +56,9 @@ enum CmcMapType {
   cloud,
   seeing,
   transparency,
+  wind,
+  humidity,
+  temperature,
 }
 
 /// Named projections for each CMC map type.
@@ -178,6 +181,12 @@ class CmcProjections {
         return seeing;
       case CmcMapType.transparency:
         return transparency;
+      case CmcMapType.wind:
+        return wind;
+      case CmcMapType.humidity:
+        return humidity;
+      case CmcMapType.temperature:
+        return transparency; // same continent projection
     }
   }
 }
